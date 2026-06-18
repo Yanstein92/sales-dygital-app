@@ -1,0 +1,57 @@
+export interface Note {
+  id: string;
+  text: string;
+  date: string;
+}
+
+export interface Payment {
+  id: string;
+  saleId: string;
+  type: string; // VIR, ESP, CHQ, CB, AUTRES
+  payer: string;
+  date: string;
+  amount: number;
+}
+
+export interface Sale {
+  id: string;
+  bdcNumber: string;
+  company: string;
+  clientName: string;
+  phone: string;
+  email: string;
+  marque: string;
+  modele: string;
+  color: string;
+  vin: string;
+  plaque: string;
+  price: number;
+  transport?: number;
+  date: string;
+  commercial: string;
+  ref: string;
+  notes?: Note[];
+  welcomeEmailSent?: boolean;
+  
+  // Nouveaux champs demandés :
+  factureStatus?: 'non_facture' | 'facture' | 'solde';
+  releaseStatus?: 'non_sorti' | 'programmee' | 'sorti' | 'sorti_tpd';
+}
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  companyId: string; // "KDB AUTO", "DJ CAR", etc. or a real ID
+  adminUid?: string;
+  role: 'admin' | 'commercial';
+  name: string;
+  testMode?: boolean;
+  maxClients?: number;
+}
+
+export interface AppState {
+  user: UserProfile | null;
+  sales: Sale[];
+  payments: Payment[];
+  isDbLoading: boolean;
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Sales - Dygital SaaS",
+  "description": "Plateforme SaaS de gestion des ventes, facturation, suivis et relances pour concessionnaires automobiles mutli-entreprises.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
