@@ -1,0 +1,1489 @@
+import React, { useState, useEffect } from 'react';
+import { Calendar as CalendarIcon, Clock, Plus, X, ChevronLeft, ChevronRight, User, Car, Settings, Check, CheckCircle2, AlertCircle, Trash2, History, ClipboardCopy, Printer, ArrowRight, Save, Info, RefreshCw } from 'lucide-react';
+import { db, doc, setDoc, getDoc, getUserDocPath } from '../lib/firebase';
+import { useApp } from '../lib/context';
+import { Sale } from '../types';
+
+interface DeliveryCalendarProps {
+  onShowToast: (m: string, t: 'success' | 'error') => void;
+}
+
+interface DeliveryConfig {
+  slots: string[];
+  workingDays: number[]; // e.g. [1,2,3,4,5]
+  dischargeText: string;
+  maxDeliveriesPerDay?: number;
+  blockedPeriods?: { from: string; to: string; reason?: string }[];
+}
+
+export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast }) => {
+  const { sales, userProfile, databaseUid } = useApp();
+  
+  // Navigation states
+  const [activeTab, setActiveTab] = useState<'calendar' | 'config' | 'logs'>('calendar');
+  const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  
+  // Configuration states
+  const [config, setConfig] = useState<DeliveryConfig>({
+    slots: ["09:00 - 10:30", "10:30 - 12:00", "14:00 - 15:30", "15:30 - 17:00"],
+    workingDays: [1, 2, 3, 4, 5],
+    dischargeText: "Je soussigné, [Client], certifie avoir pris livraison du véhicule [Marque] [Modèle] immatriculé [Plaque] (N° VIN : [VIN]) en parfait état et muni de tous ses documents administratifs.",
+    maxDeliveriesPerDay: 4,
+    blockedPeriods: []
+  });
+  const [isConfigLoading, setIsConfigLoading] = useState(true);
+  const [newSlotStart, setNewSlotStart] = useState('');
+  const [newSlotEnd, setNewSlotEnd] = useState('');
+
+  // Block period inputs
+  const [blockFrom, setBlockFrom] = useState('');
+  const [blockTo, setBlockTo] = useState('');
+  const [blockReason, setBlockReason] = useState('');
+
+  // Active planning state
+  const [isPlanningSale, setIsPlanningSale] = useState<Sale | null>(null);
+  const [planningSlot, setPlanningSlot] = useState<string>('');
+
+  // Discharge Generation State
+  const [isGeneratingDischarge, setIsGeneratingDischarge] = useState<Sale | null>(null);
+  const [dischargeForm, setDischargeForm] = useState({
+    recipientType: 'client', // client or other
+    recipientName: '',
+    recipientId: '',
+    checkedItems: {
+      FACTURE: true,
+      CPI: true,
+      CARTE_GRISE: true,
+      COC: false,
+      PASSEPORT: false,
+      DOUBLE_DE_CLE: true,
+      CESSION: true,
+      CHAINE_DE_PROPRIETE: false,
+      AUTRE: false,
+    },
+    autreCommentaire: ''
+  });
+
+  // Fetch Delivery Config on Mount
+  useEffect(() => {
+    const fetchConfig = async () => {
+      if (!databaseUid) return;
+      try {
+        setIsConfigLoading(true);
+        const configDocRef = doc(db, getUserDocPath(databaseUid) + '/settings/delivery_config');
+        const configSnap = await getDoc(configDocRef);
+        if (configSnap.exists()) {
+          const data = configSnap.data() as DeliveryConfig;
+          setConfig({
+            slots: data.slots || ["09:00 - 10:30", "10:30 - 12:00", "14:00 - 15:30", "15:30 - 17:00"],
+            workingDays: data.workingDays || [1, 2, 3, 4, 5],
+            dischargeText: data.dischargeText || "Je soussigné, [Client], certifie avoir pris livraison du véhicule [Marque] [Modèle] immatriculé [Plaque] (N° VIN : [VIN]) en parfait état et muni de tous ses documents administratifs.",
+            maxDeliveriesPerDay: data.maxDeliveriesPerDay || 4,
+            blockedPeriods: data.blockedPeriods || []
+          });
+        } else {
+          // Initialize first default config
+          await setDoc(configDocRef, config);
+        }
+      } catch (e) {
+        console.error("Error reading delivery config:", e);
+      } finally {
+        setIsConfigLoading(false);
+      }
+    };
+    fetchConfig();
+  }, [databaseUid]);
+
+  // Save config to Firestore
+  const saveConfig = async (newConfig: DeliveryConfig) => {
+    if (!databaseUid) return;
+    try {
+      const configDocRef = doc(db, getUserDocPath(databaseUid) + '/settings/delivery_config');
+      await setDoc(configDocRef, newConfig);
+      setConfig(newConfig);
+      onShowToast("Configuration enregistrée avec succès !", "success");
+    } catch (e) {
+      onShowToast("Erreur lors de l'enregistrement de la configuration.", "error");
+    }
+  };
+
+  const handleAddBlockedPeriod = async () => {
+    if (!blockFrom || !blockTo) {
+      onShowToast("Veuillez sélectionner les dates de début et de fin.", "error");
+      return;
+    }
+    if (blockFrom > blockTo) {
+      onShowToast("La date de début doit être antérieure ou égale à la date de fin.", "error");
+      return;
+    }
+
+    const newPeriod = {
+      from: blockFrom,
+      to: blockTo,
+      reason: blockReason.trim()
+    };
+
+    const updatedPeriods = [...(config.blockedPeriods || []), newPeriod];
+    const updatedConfig = { ...config, blockedPeriods: updatedPeriods };
+    await saveConfig(updatedConfig);
+    setBlockFrom('');
+    setBlockTo('');
+    setBlockReason('');
+  };
+
+  const handleRemoveBlockedPeriod = async (index: number) => {
+    const updatedPeriods = (config.blockedPeriods || []).filter((_, idx) => idx !== index);
+    const updatedConfig = { ...config, blockedPeriods: updatedPeriods };
+    await saveConfig(updatedConfig);
+  };
+
+  // Handle Delivery Scheduling internally
+  const handleScheduleDelivery = async (sale: Sale, date: string, slot: string) => {
+    if (!databaseUid) return;
+
+    // Check daily capacity limit
+    const maxLimit = config.maxDeliveriesPerDay;
+    if (maxLimit && maxLimit > 0) {
+      const cellDeliveriesCount = (sales || []).filter(s => s.deliveryDate === date && s.deliveryStatus === 'programmee' && s.id !== sale.id).length;
+      if (cellDeliveriesCount >= maxLimit) {
+        const confirmOverride = window.confirm(
+          `Attention: La limite quotidienne de ${maxLimit} livraisons est déjà atteinte pour le ${date}.\n\nSouhaitez-vous forcer l'ajout de ce rendez-vous (autorisé pour le Gestionnaire/Admin/Commercial) ?`
+        );
+        if (!confirmOverride) return;
+      }
+    }
+
+    // Check if falls in a blocked period
+    const isBlocked = (config.blockedPeriods || []).some(p => date >= p.from && date <= p.to);
+    if (isBlocked) {
+      const confirmOverride = window.confirm(
+        `Attention: La date du ${date} se situe dans une période bloquée pour congés ou fermeture.\n\nSouhaitez-vous forcer l'ajout de ce rendez-vous malgré le blocage ?`
+      );
+      if (!confirmOverride) return;
+    }
+
+    try {
+      const saleRef = doc(db, getUserDocPath(databaseUid) + '/sales/' + sale.id);
+      const logEntry = {
+        user: userProfile?.name || 'Administrateur',
+        action: `Livraison planifiée pour le ${date} à ${slot}`,
+        timestamp: new Date().toISOString()
+      };
+      
+      const existingLog = sale.deliveryLog || [];
+      const updatedFields = {
+        deliveryDate: date,
+        deliverySlot: slot,
+        deliveryStatus: 'programmee' as const,
+        deliveryLog: [...existingLog, logEntry]
+      };
+
+      await setDoc(saleRef, updatedFields, { merge: true });
+      onShowToast(`Livraison de ${sale.clientName} programmée avec succès.`, "success");
+      setIsPlanningSale(null);
+    } catch (e) {
+      onShowToast("Erreur lors de la planification de la livraison.", "error");
+    }
+  };
+
+  // Handle Mark as Delivered
+  const handleMarkAsDelivered = async (sale: Sale) => {
+    if (!databaseUid) return;
+    try {
+      const saleRef = doc(db, getUserDocPath(databaseUid) + '/sales/' + sale.id);
+      const logEntry = {
+        user: userProfile?.name || 'Administrateur',
+        action: "Livraison marquée comme EFFECTUÉE (LIVRÉE)",
+        timestamp: new Date().toISOString()
+      };
+      const existingLog = sale.deliveryLog || [];
+      await setDoc(saleRef, {
+        deliveryStatus: 'livre',
+        deliveryLog: [...existingLog, logEntry]
+      }, { merge: true });
+      onShowToast(`Véhicule marqué comme livré. Dossier clôturé !`, "success");
+    } catch (e) {
+      onShowToast("Erreur lors de la mise à jour.", "error");
+    }
+  };
+
+  // Handle Cancel Delivery
+  const handleCancelDelivery = async (sale: Sale) => {
+    if (!databaseUid) return;
+    if (!confirm(`Annuler la livraison pour ${sale.clientName} ? Les horaires redeviendront libres.`)) return;
+    try {
+      const saleRef = doc(db, getUserDocPath(databaseUid) + '/sales/' + sale.id);
+      const logEntry = {
+        user: userProfile?.name || 'Administrateur',
+        action: "Livraison ANNULÉE",
+        timestamp: new Date().toISOString()
+      };
+      const existingLog = sale.deliveryLog || [];
+      await setDoc(saleRef, {
+        deliveryStatus: 'annule',
+        deliveryLog: [...existingLog, logEntry]
+      }, { merge: true });
+      onShowToast("Livraison annulée.", "success");
+    } catch (e) {
+      onShowToast("Erreur lors de l'annulation.", "error");
+    }
+  };
+
+  // Filter Sales that are invoiced ('facture') but not yet delivered
+  const invoicedSales = (sales || []).filter(s => s.factureStatus === 'facture');
+  
+  // Pending planifications: Invoiced and doesn't have a programmed date or status is non_programmee/annule
+  const pendingPlanificationSales = invoicedSales.filter(s => !s.deliveryDate || s.deliveryStatus === 'non_programmee' || s.deliveryStatus === 'annule');
+
+  // Filter active programmed deliveries for the selectedDate
+  const dayDeliveries = invoicedSales.filter(s => s.deliveryDate === selectedDate && s.deliveryStatus === 'programmee');
+
+  // Generate Calendar Days list
+  const getDaysInMonth = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const firstDayOfMonth = new Date(year, month, 1);
+    const lastDayOfMonth = new Date(year, month + 0, 0); // last day
+    const numDays = new Date(year, month + 1, 0).getDate();
+    
+    // Day of the week of first day (0 is Sun, shift so Monday is 0)
+    let startDayOfWeek = firstDayOfMonth.getDay() - 1;
+    if (startDayOfWeek === -1) startDayOfWeek = 6; // Sunday
+    
+    const days = [];
+    
+    // Padding previous month
+    for (let i = startDayOfWeek - 1; i >= 0; i--) {
+      const d = new Date(year, month, -i);
+      days.push({ date: d, isCurrentMonth: false });
+    }
+    
+    // Current month days
+    for (let i = 1; i <= numDays; i++) {
+      const d = new Date(year, month, i);
+      days.push({ date: d, isCurrentMonth: true });
+    }
+    
+    return days;
+  };
+
+  const calendarDays = getDaysInMonth(currentMonth);
+
+  // Helper to format date key YYYY-MM-DD
+  const formatDateKey = (d: Date) => {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const handleMonthChange = (direction: 'prev' | 'next') => {
+    const newDate = new Date(currentMonth);
+    newDate.setMonth(currentMonth.getMonth() + (direction === 'prev' ? -1 : 1));
+    setCurrentMonth(newDate);
+  };
+
+  // Copy reservation link
+  const copyBookingLink = (saleId: string) => {
+    const link = `${window.location.origin}/#reserve/${saleId}`;
+    navigator.clipboard.writeText(link);
+    onShowToast("Lien de réservation copié dans le presse-papiers !", "success");
+  };
+
+  // Add a custom slot
+  const handleAddSlot = () => {
+    if (!newSlotStart || !newSlotEnd) return;
+    const formattedSlot = `${newSlotStart.trim()} - ${newSlotEnd.trim()}`;
+    if (config.slots.includes(formattedSlot)) {
+      onShowToast("Ce créneau existe déjà.", "error");
+      return;
+    }
+    const updatedSlots = [...config.slots, formattedSlot].sort();
+    saveConfig({ ...config, slots: updatedSlots });
+    setNewSlotStart('');
+    setNewSlotEnd('');
+  };
+
+  // Remove a custom slot
+  const handleRemoveSlot = (indexToRemove: number) => {
+    const updatedSlots = config.slots.filter((_, idx) => idx !== indexToRemove);
+    saveConfig({ ...config, slots: updatedSlots });
+  };
+
+  // Toggle Working Days
+  const handleToggleWorkingDay = (day: number) => {
+    const updatedDays = config.workingDays.includes(day)
+      ? config.workingDays.filter(d => d !== day)
+      : [...config.workingDays, day].sort();
+    saveConfig({ ...config, workingDays: updatedDays });
+  };
+
+  // Open Discharge Form
+  const openDischargeModal = (sale: Sale) => {
+    setIsGeneratingDischarge(sale);
+    setDischargeForm({
+      recipientType: 'client',
+      recipientName: sale.clientName,
+      recipientId: '',
+      checkedItems: {
+        FACTURE: true,
+        CPI: true,
+        CARTE_GRISE: true,
+        COC: false,
+        PASSEPORT: false,
+        DOUBLE_DE_CLE: true,
+        CESSION: true,
+        CHAINE_DE_PROPRIETE: false,
+        AUTRE: false,
+      },
+      autreCommentaire: ''
+    });
+  };
+
+  // Print Discharge
+  const triggerPrintDischarge = () => {
+    if (!isGeneratingDischarge) return;
+    
+    // Generate text replacing variables
+    let text = config.dischargeText;
+    text = text.replace(/\[Client\]/g, isGeneratingDischarge.clientName || "Client");
+    text = text.replace(/\[Marque\]/g, isGeneratingDischarge.marque || "");
+    text = text.replace(/\[Modèle\]/g, isGeneratingDischarge.modele || "");
+    text = text.replace(/\[Plaque\]/g, isGeneratingDischarge.plaque || "Non immatriculé");
+    text = text.replace(/\[VIN\]/g, isGeneratingDischarge.vin || "");
+    text = text.replace(/\[Entreprise\]/g, isGeneratingDischarge.company || "Concessionnaire");
+
+    // Recipient line
+    const recipientLine = dischargeForm.recipientType === 'client' 
+      ? `Acheteur d'origine : ${isGeneratingDischarge.clientName}`
+      : `Mandataire / Récupérateur : ${dischargeForm.recipientName} (Pièce d'identité : ${dischargeForm.recipientId || 'N/A'})`;
+
+    // Print Layout
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      onShowToast("Veuillez autoriser les popups pour imprimer la décharge.", "error");
+      return;
+    }
+
+    const docDate = new Date().toLocaleDateString('fr-FR');
+    const docTitle = `decharge_${(isGeneratingDischarge.company || "Dygital").replace(/\s+/g, '_')}_${isGeneratingDischarge.bdcNumber}_${docDate.replace(/\//g, '-')}`;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${docTitle}</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
+            body {
+              font-family: 'Inter', sans-serif;
+              color: #1e293b;
+              padding: 40px;
+              line-height: 1.6;
+              font-size: 14px;
+            }
+            .header {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              border-bottom: 2px solid #e2e8f0;
+              padding-bottom: 20px;
+              margin-bottom: 30px;
+            }
+            .company-name {
+              font-size: 24px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: -0.5px;
+            }
+            .doc-title {
+              font-size: 20px;
+              font-weight: 700;
+              color: #0f172a;
+              margin-top: 10px;
+              text-transform: uppercase;
+              letter-spacing: 1px;
+            }
+            .section {
+              margin-bottom: 25px;
+            }
+            .section-title {
+              font-weight: 700;
+              text-transform: uppercase;
+              font-size: 12px;
+              letter-spacing: 1px;
+              color: #64748b;
+              border-bottom: 1px solid #f1f5f9;
+              padding-bottom: 5px;
+              margin-bottom: 15px;
+            }
+            .grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 20px;
+              margin-bottom: 20px;
+            }
+            .info-box {
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              padding: 15px;
+              border-radius: 8px;
+            }
+            .info-label {
+              font-size: 11px;
+              font-weight: 700;
+              color: #64748b;
+              text-transform: uppercase;
+            }
+            .info-value {
+              font-size: 14px;
+              font-weight: 600;
+              color: #0f172a;
+              margin-top: 2px;
+            }
+            .checkbox-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 10px;
+              margin-top: 15px;
+            }
+            .checkbox-item {
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              font-weight: 500;
+            }
+            .box {
+              width: 16px;
+              height: 16px;
+              border: 1.5px solid #0f172a;
+              display: inline-block;
+              position: relative;
+              border-radius: 3px;
+            }
+            .box.checked::after {
+              content: "✔";
+              position: absolute;
+              top: -3px;
+              left: 2px;
+              font-size: 12px;
+              color: #0f172a;
+            }
+            .discharge-text {
+              background: #f8fafc;
+              border-left: 4px solid #0f172a;
+              padding: 15px;
+              font-style: italic;
+              color: #334155;
+              margin-bottom: 30px;
+              border-radius: 0 8px 8px 0;
+            }
+            .signatures {
+              margin-top: 50px;
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 100px;
+            }
+            .sig-box {
+              height: 120px;
+              border: 1px dashed #cbd5e1;
+              border-radius: 8px;
+              padding: 15px;
+              display: flex;
+              flex-direction: column;
+              justify-content: space-between;
+              background: #fdfdfd;
+            }
+            .sig-title {
+              font-size: 12px;
+              font-weight: 700;
+              text-align: center;
+              color: #475569;
+              border-bottom: 1px solid #f1f5f9;
+              padding-bottom: 5px;
+            }
+            .footer {
+              text-align: center;
+              font-size: 11px;
+              color: #94a3b8;
+              margin-top: 80px;
+              border-top: 1px solid #e2e8f0;
+              padding-top: 15px;
+            }
+            @media print {
+              body { padding: 0; }
+              .sig-box { background: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <div class="company-name">${isGeneratingDischarge.company || "Dygital"}</div>
+              <div class="doc-title">Décharge de livraison</div>
+            </div>
+            <div style="text-align: right; font-size: 12px; color: #64748b;">
+              <div>Bon de Commande : <strong>${isGeneratingDischarge.bdcNumber}</strong></div>
+              <div>Date de livraison : <strong>${docDate}</strong></div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Informations Véhicule</div>
+            <div class="grid">
+              <div class="info-box">
+                <div class="info-label">Marque / Modèle</div>
+                <div class="info-value">${isGeneratingDischarge.marque} ${isGeneratingDischarge.modele}</div>
+                <div style="margin-top: 10px;" class="info-label">Teinte / Couleur</div>
+                <div class="info-value">${isGeneratingDischarge.color || "Non renseigné"}</div>
+              </div>
+              <div class="info-box">
+                <div class="info-label font-mono">N° de Châssis (VIN)</div>
+                <div class="info-value font-mono">${isGeneratingDischarge.vin}</div>
+                <div style="margin-top: 10px;" class="info-label">Immatriculation</div>
+                <div class="info-value font-mono">${isGeneratingDischarge.plaque || "Non immatriculé"}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Destinataire / Mandataire</div>
+            <div class="info-box">
+              <div class="info-label">Bénéficiaire de la livraison</div>
+              <div class="info-value" style="font-size: 15px;">${recipientLine}</div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Attestation de livraison & conformité</div>
+            <div class="discharge-text">
+              "${text}"
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Documents et éléments remis</div>
+            <div class="checkbox-grid">
+              <div class="checkbox-item">
+                <div class="box ${dischargeForm.checkedItems.FACTURE ? 'checked' : ''}"></div>
+                <span>FACTURE D'ACHAT</span>
+              </div>
+              <div class="checkbox-item">
+                <div class="box ${dischargeForm.checkedItems.CPI ? 'checked' : ''}"></div>
+                <span>CPI (Certificat Provisoire d'Immatriculation)</span>
+              </div>
+              <div class="checkbox-item">
+                <div class="box ${dischargeForm.checkedItems.CARTE_GRISE ? 'checked' : ''}"></div>
+                <span>CARTE GRISE / TITRE ÉTRANGER</span>
+              </div>
+              <div class="checkbox-item">
+                <div class="box ${dischargeForm.checkedItems.COC ? 'checked' : ''}"></div>
+                <span>COC (Certificat de Conformité)</span>
+              </div>
+              <div class="checkbox-item">
+                <div class="box ${dischargeForm.checkedItems.PASSEPORT ? 'checked' : ''}"></div>
+                <span>PASSEPORT / PIÈCE D'IDENTITÉ</span>
+              </div>
+              <div class="checkbox-item">
+                <div class="box ${dischargeForm.checkedItems.DOUBLE_DE_CLE ? 'checked' : ''}"></div>
+                <span>DOUBLE DE CLÉ</span>
+              </div>
+              <div class="checkbox-item">
+                <div class="box ${dischargeForm.checkedItems.CESSION ? 'checked' : ''}"></div>
+                <span>CERTIFICAT DE CESSION</span>
+              </div>
+              <div class="checkbox-item">
+                <div class="box ${dischargeForm.checkedItems.CHAINE_DE_PROPRIETE ? 'checked' : ''}"></div>
+                <span>CHAINE DE PROPRIÉTÉ</span>
+              </div>
+              ${dischargeForm.checkedItems.AUTRE ? `
+              <div class="checkbox-item" style="grid-column: span 2; margin-top: 5px;">
+                <div class="box checked"></div>
+                <span style="font-style: italic; color: #475569;">Autre : ${dischargeForm.autreCommentaire || "N/A"}</span>
+              </div>
+              ` : ''}
+            </div>
+          </div>
+
+          <div class="signatures">
+            <div class="sig-box">
+              <div class="sig-title">Signature du client / mandataire</div>
+              <div style="font-size: 11px; color: #94a3b8; text-align: center;">Mention manuscrite "Bon pour décharge"</div>
+            </div>
+            <div class="sig-box">
+              <div class="sig-title">Le livreur (${isGeneratingDischarge.company || "Dygital"})</div>
+              <div style="font-size: 11px; color: #94a3b8; text-align: center;">Nom et signature du préparateur</div>
+            </div>
+          </div>
+
+          <div class="footer">
+            Document généré numériquement par Dygital SaaS. Fait à la date du ${docDate}.
+          </div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+            }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    onShowToast("Impression lancée.", "success");
+    setIsGeneratingDischarge(null);
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-slate-50 min-h-screen">
+      {/* Top Banner with Navigation Tabs */}
+      <div className="bg-slate-900 text-white p-6 shadow-md border-b border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-black flex items-center gap-2.5">
+            <CalendarIcon className="text-blue-400" size={26} /> Calendrier de Livraison
+          </h2>
+          <p className="text-sm text-slate-400 mt-1">Gérez la préparation des véhicules facturés, programmez les rendez-vous et générez les décharges.</p>
+        </div>
+        
+        {/* Tab Controls */}
+        <div className="flex bg-slate-800 p-1.5 rounded-xl border border-slate-700/80">
+          <button 
+            onClick={() => setActiveTab('calendar')}
+            className={`px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'calendar' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+          >
+            <CalendarIcon size={14} /> Calendrier
+          </button>
+          <button 
+            onClick={() => setActiveTab('config')}
+            className={`px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'config' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+          >
+            <Settings size={14} /> Configuration
+          </button>
+          <button 
+            onClick={() => setActiveTab('logs')}
+            className={`px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'logs' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+          >
+            <History size={14} /> Historique global
+          </button>
+        </div>
+      </div>
+
+      <div className="p-6 w-full max-w-[1600px] mx-auto">
+        {/* ==================== TAB: CALENDAR ==================== */}
+        {activeTab === 'calendar' && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            
+            {/* Left Column: Vehicles to Program */}
+            <div className="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 flex flex-col h-[calc(100vh-220px)] min-h-[450px]">
+              <div className="mb-4">
+                <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                  Véhicules à planifier ({pendingPlanificationSales.length})
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">Dossiers d'achat déjà facturés sans date de livraison programmée.</p>
+              </div>
+
+              {/* Scrollable list of pending vehicles */}
+              <div className="space-y-3 overflow-y-auto flex-1 pr-1">
+                {pendingPlanificationSales.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
+                    <CheckCircle2 className="mx-auto mb-3 text-slate-200" size={32} />
+                    <p className="text-xs font-bold uppercase tracking-wider">Tout est planifié !</p>
+                    <p className="text-[10px] text-slate-400 mt-1 px-4">Aucun véhicule facturé en attente de programmation.</p>
+                  </div>
+                ) : (
+                  pendingPlanificationSales.map(sale => (
+                    <div key={sale.id} className="bg-slate-50 hover:bg-slate-100/80 border border-slate-200/50 hover:border-slate-300 p-4 rounded-xl transition-all space-y-3 shadow-inner">
+                      <div className="flex justify-between items-start">
+                        <div className="min-w-0">
+                          <span className="bg-amber-100 text-amber-800 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-amber-200">Facturé</span>
+                          <h4 className="font-extrabold text-slate-800 text-sm mt-1.5 truncate">{sale.marque} {sale.modele}</h4>
+                          <p className="text-xs text-slate-500 truncate">Client: {sale.clientName}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="text-[10px] font-bold font-mono text-slate-400">BDC {sale.bdcNumber}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/50">
+                        <button 
+                          onClick={() => copyBookingLink(sale.id)}
+                          className="text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-200 font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white transition-colors flex items-center gap-1 cursor-pointer"
+                          title="Copier le lien public de réservation client"
+                        >
+                          <ClipboardCopy size={13} /> Lien client
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setIsPlanningSale(sale);
+                            setPlanningSlot(config.slots[0] || '');
+                          }}
+                          className="text-xs bg-slate-900 hover:bg-slate-800 text-white font-black px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          Placer <ArrowRight size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Calendar grid */}
+            <div className="lg:col-span-8 space-y-6">
+              
+              {/* Calendar Grid Controller */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5">
+                <div className="flex items-center justify-between mb-5">
+                  <div className="flex items-center gap-1">
+                    <h3 className="text-lg font-black text-slate-800 capitalize">
+                      {currentMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => handleMonthChange('prev')} 
+                      className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer"
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+                    <button 
+                      onClick={() => setCurrentMonth(new Date())} 
+                      className="text-xs font-bold px-2.5 py-1.5 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition-colors cursor-pointer"
+                    >
+                      Aujourd'hui
+                    </button>
+                    <button 
+                      onClick={() => handleMonthChange('next')} 
+                      className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer"
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Day Header */}
+                <div className="grid grid-cols-7 gap-1 text-center font-black text-[10px] text-slate-400 uppercase tracking-widest mb-2">
+                  <span>Lun</span>
+                  <span>Mar</span>
+                  <span>Mer</span>
+                  <span>Jeu</span>
+                  <span>Ven</span>
+                  <span>Sam</span>
+                  <span>Dim</span>
+                </div>
+
+                {/* Day Grid */}
+                <div className="grid grid-cols-7 gap-1">
+                  {calendarDays.map((cell, idx) => {
+                    const dateKey = formatDateKey(cell.date);
+                    const isSelected = selectedDate === dateKey;
+                    const isToday = formatDateKey(new Date()) === dateKey;
+                    
+                    // Filter deliveries scheduled for this cell day
+                    const cellDeliveries = (sales || []).filter(s => s.deliveryDate === dateKey && s.deliveryStatus === 'programmee');
+
+                    const isBlockedDate = (config.blockedPeriods || []).some(
+                      p => dateKey >= p.from && dateKey <= p.to
+                    );
+
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => setSelectedDate(dateKey)}
+                        className={`h-20 p-1 rounded-xl border flex flex-col justify-between items-start transition-all cursor-pointer relative ${
+                          isBlockedDate
+                          ? 'bg-red-50/30 border-red-100 text-slate-500'
+                          : cell.isCurrentMonth ? 'bg-white' : 'bg-slate-50/50 text-slate-400'
+                        } ${
+                          isSelected 
+                          ? 'border-blue-600 ring-2 ring-blue-500/10 shadow-md' 
+                          : 'border-slate-100 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center w-full">
+                          <span className={`text-xs font-black px-1.5 py-0.5 rounded-md ${
+                            isToday ? 'bg-blue-600 text-white' : 'text-slate-700'
+                          }`}>
+                            {cell.date.getDate()}
+                          </span>
+                          
+                          {isBlockedDate && (
+                            <span className="text-[8px] bg-red-100 text-red-800 px-1 py-0.5 rounded font-black uppercase tracking-wider scale-90" title="Période de livraison bloquée">Bloqué</span>
+                          )}
+                          {!isBlockedDate && cellDeliveries.length > 0 && (
+                            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-scale-up" title={`${cellDeliveries.length} livraison(s)`}></span>
+                          )}
+                        </div>
+
+                        {/* Miniature display of deliveries */}
+                        <div className="w-full mt-1 overflow-hidden space-y-0.5 text-left shrink-0">
+                          {cellDeliveries.slice(0, 2).map(delivery => (
+                            <div key={delivery.id} className="text-[9px] bg-blue-50 text-blue-900 border border-blue-100 font-extrabold truncate px-1 rounded-md py-0.5 leading-none">
+                              {delivery.marque} {delivery.modele}
+                            </div>
+                          ))}
+                          {cellDeliveries.length > 2 && (
+                            <div className="text-[8px] font-bold text-slate-400 pl-1">+{cellDeliveries.length - 2} autres</div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Day Slot Details Section */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-6 animate-fade-in-up">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-4">
+                  <div>
+                    <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-1.5">
+                      📅 Livraisons du {new Date(selectedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">Consultez l'utilisation des créneaux et complétez les actions de livraison.</p>
+                  </div>
+                  <div className="bg-slate-100 text-slate-700 font-extrabold text-xs px-2.5 py-1 rounded-full border border-slate-200">
+                    {dayDeliveries.length} livraison(s)
+                  </div>
+                </div>
+
+                {/* Slots display for selected date */}
+                <div className="space-y-3">
+                  {config.slots.map(slot => {
+                    // Find if there is a programmed sale on this date and slot
+                    const activeDelivery = (sales || []).find(s => s.deliveryDate === selectedDate && s.deliverySlot === slot && s.deliveryStatus === 'programmee');
+                    
+                    return (
+                      <div key={slot} className={`border rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
+                        activeDelivery ? 'border-blue-200 bg-blue-50/20' : 'border-slate-100 bg-slate-50/20 hover:bg-slate-50'
+                      }`}>
+                        {/* Slot label */}
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${
+                            activeDelivery ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-400'
+                          }`}>
+                            <Clock size={18} />
+                          </div>
+                          <div>
+                            <span className="text-xs font-black text-slate-400 tracking-wider uppercase block">{slot}</span>
+                            {activeDelivery ? (
+                              <span className="font-extrabold text-blue-900 text-sm">Occupé • {activeDelivery.clientName}</span>
+                            ) : (
+                              <span className="text-slate-400 font-bold text-sm">Disponible</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Slot Content or Action */}
+                        {activeDelivery ? (
+                          <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                            <button
+                              onClick={() => { window.location.hash = '#detail/' + activeDelivery.id; }}
+                              className="text-left bg-white border border-blue-200 hover:border-blue-400 p-2.5 rounded-xl shadow-sm hover:shadow-md transition-all group flex flex-col gap-1 shrink-0 cursor-pointer"
+                              title="Cliquer pour ouvrir le dossier client dans l'application"
+                            >
+                              <div className="flex items-center gap-1.5 font-extrabold text-blue-900 group-hover:text-blue-600 transition-colors text-xs">
+                                <Car size={13} className="text-blue-500" />
+                                <span>{activeDelivery.marque} {activeDelivery.modele}</span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 font-bold font-mono">
+                                {activeDelivery.plaque ? (
+                                  <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-700">Immat: {activeDelivery.plaque}</span>
+                                ) : (
+                                  <span className="bg-slate-50 border border-slate-150 px-1.5 py-0.5 rounded text-slate-400 italic">Sans plaque</span>
+                                )}
+                                {activeDelivery.vin && (
+                                  <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-700">VIN: {activeDelivery.vin}</span>
+                                )}
+                              </div>
+                            </button>
+
+                            {/* Mark Delivered Button */}
+                            <button 
+                              onClick={() => handleMarkAsDelivered(activeDelivery)}
+                              className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-black px-3 py-2 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                              title="Valider la réception et clôturer le dossier"
+                            >
+                              <CheckCircle2 size={13} /> Livré
+                            </button>
+
+                            {/* Generate Discharge Button */}
+                            <button 
+                              onClick={() => openDischargeModal(activeDelivery)}
+                              className="text-xs bg-slate-900 hover:bg-slate-800 text-white font-black px-3 py-2 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                              title="Remplir et générer la décharge de livraison"
+                            >
+                              <Printer size={13} /> Décharge
+                            </button>
+
+                            {/* Cancel Button */}
+                            <button 
+                              onClick={() => handleCancelDelivery(activeDelivery)}
+                              className="p-2 text-red-600 hover:bg-red-50 hover:border-red-200 border border-transparent rounded-lg transition-all cursor-pointer"
+                              title="Annuler le rendez-vous"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div>
+                            <button 
+                              onClick={() => {
+                                // Find any sale to assign, opens the modal/drawer on left side
+                                onShowToast("Sélectionnez un véhicule dans la colonne de gauche et cliquez sur Placer", "error");
+                              }}
+                              className="text-xs text-slate-600 hover:text-slate-900 font-bold px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+                            >
+                              + Assigner un véhicule
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ==================== TAB: CONFIGURATION ==================== */}
+        {activeTab === 'config' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-6 space-y-8 animate-fade-in-up max-w-4xl mx-auto">
+            
+            {/* Delivery Hours Slots Manager */}
+            <div>
+              <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
+                <Clock className="text-blue-600" size={18} />
+                Créneaux Horaires de Livraison
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">Configurez les heures de rendez-vous disponibles pour vos clients lors de leur réservation.</p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                {/* List of slots */}
+                <div className="space-y-2 max-h-[220px] overflow-y-auto border border-slate-100 p-3 rounded-xl bg-slate-50/50">
+                  {config.slots.length === 0 ? (
+                    <p className="text-xs text-slate-400 text-center py-4">Aucun créneau configuré.</p>
+                  ) : (
+                    config.slots.map((slot, idx) => (
+                      <div key={slot} className="bg-white border border-slate-200 p-2 px-3 rounded-lg flex justify-between items-center text-xs font-bold text-slate-700 shadow-sm">
+                        <span className="flex items-center gap-1.5"><Clock size={12} className="text-slate-400" /> {slot}</span>
+                        <button 
+                          onClick={() => handleRemoveSlot(idx)}
+                          className="text-red-600 hover:bg-red-50 p-1.5 rounded-lg cursor-pointer"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Add slot form */}
+                <div className="bg-slate-50 border border-slate-100 p-4 rounded-xl flex flex-col justify-between space-y-3">
+                  <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Ajouter un créneau</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 block mb-1">Heure de début</label>
+                      <input 
+                        type="text" 
+                        placeholder="ex: 08:30" 
+                        value={newSlotStart} 
+                        onChange={e => setNewSlotStart(e.target.value)} 
+                        className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 block mb-1">Heure de fin</label>
+                      <input 
+                        type="text" 
+                        placeholder="ex: 10:00" 
+                        value={newSlotEnd} 
+                        onChange={e => setNewSlotEnd(e.target.value)} 
+                        className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" 
+                      />
+                    </div>
+                  </div>
+                  <button 
+                    onClick={handleAddSlot}
+                    className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-2 rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus size={14} /> Enregistrer le créneau
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <hr className="border-slate-100" />
+
+            {/* Working Days Manager */}
+            <div>
+              <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
+                <CalendarIcon className="text-blue-600" size={18} />
+                Jours d'ouverture de l'atelier
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">Cochez les jours de la semaine disponibles pour planifier des remises de clés.</p>
+              
+              <div className="flex flex-wrap gap-2.5 mt-4">
+                {[
+                  { value: 1, label: "Lundi" },
+                  { value: 2, label: "Mardi" },
+                  { value: 3, label: "Mercredi" },
+                  { value: 4, label: "Jeudi" },
+                  { value: 5, label: "Vendredi" },
+                  { value: 6, label: "Samedi" },
+                  { value: 0, label: "Dimanche" }
+                ].map(day => {
+                  const isActive = config.workingDays.includes(day.value);
+                  return (
+                    <button
+                      key={day.value}
+                      type="button"
+                      onClick={() => handleToggleWorkingDay(day.value)}
+                      className={`p-2.5 px-4 rounded-xl border-2 font-bold text-xs transition-all cursor-pointer ${
+                        isActive 
+                        ? 'border-blue-600 bg-blue-50/50 text-blue-900 font-extrabold shadow-sm' 
+                        : 'border-slate-200 bg-white text-slate-500'
+                      }`}
+                    >
+                      {day.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <hr className="border-slate-100" />
+
+            {/* Limit and Blocked Periods Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Daily Capacity Limit */}
+              <div className="bg-slate-50 border border-slate-200/60 p-5 rounded-2xl space-y-3 shadow-inner">
+                <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
+                  <Settings className="text-blue-600" size={16} />
+                  Limite de Livraisons Quotidiennes
+                </h4>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Fixez le nombre maximum de rendez-vous de livraison que les clients peuvent réserver par jour via leur lien public. Les administrateurs et gestionnaires de parc peuvent outrepasser cette limite.
+                </p>
+                <div className="flex items-center gap-3 mt-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={config.maxDeliveriesPerDay || 4}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value) || 4;
+                      setConfig(prev => ({ ...prev, maxDeliveriesPerDay: val }));
+                    }}
+                    className="w-24 bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-black focus:ring-2 focus:ring-blue-500 outline-none text-slate-800"
+                  />
+                  <span className="text-xs font-bold text-slate-500">livraisons max par jour</span>
+                </div>
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => saveConfig(config)}
+                    className="bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs px-4 py-2 rounded-xl transition-all shadow cursor-pointer"
+                  >
+                    Enregistrer la limite
+                  </button>
+                </div>
+              </div>
+
+              {/* Blocked Periods Form and List */}
+              <div className="bg-slate-50 border border-slate-200/60 p-5 rounded-2xl space-y-4 shadow-inner">
+                <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
+                  <AlertCircle className="text-red-500" size={16} />
+                  Bloquer une Période (Fermeture / Congés)
+                </h4>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Interdisez aux clients de planifier des livraisons pendant une plage de dates spécifique.
+                </p>
+
+                <div className="space-y-3 bg-white p-4 rounded-xl border border-slate-200">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Du</label>
+                      <input
+                        type="date"
+                        value={blockFrom}
+                        onChange={e => setBlockFrom(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Au (inclus)</label>
+                      <input
+                        type="date"
+                        value={blockTo}
+                        onChange={e => setBlockTo(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Motif du blocage</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Congés annuels, Inventaire..."
+                      value={blockReason}
+                      onChange={e => setBlockReason(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddBlockedPeriod}
+                    className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-2 rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus size={14} /> Bloquer cette période
+                  </button>
+                </div>
+
+                {/* List of Blocked Periods */}
+                <div className="space-y-2 max-h-[150px] overflow-y-auto">
+                  {(!config.blockedPeriods || config.blockedPeriods.length === 0) ? (
+                    <p className="text-xs text-slate-400 text-center italic py-2">Aucune période de blocage active.</p>
+                  ) : (
+                    config.blockedPeriods.map((period, idx) => (
+                      <div key={idx} className="bg-white border border-slate-200 p-2.5 rounded-xl flex justify-between items-center text-xs shadow-sm">
+                        <div className="min-w-0">
+                          <p className="font-extrabold text-slate-800">
+                            Du {new Date(period.from).toLocaleDateString('fr-FR')} au {new Date(period.to).toLocaleDateString('fr-FR')}
+                          </p>
+                          {period.reason && (
+                            <p className="text-[10px] text-slate-500 font-medium truncate">{period.reason}</p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveBlockedPeriod(idx)}
+                          className="text-red-600 hover:bg-red-50 p-1.5 rounded-lg cursor-pointer shrink-0"
+                          title="Supprimer le blocage"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <hr className="border-slate-100" />
+
+            {/* Discharge Template Text Editor */}
+            <div>
+              <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
+                <Printer className="text-blue-600" size={18} />
+                Contenu de l'Attestation de Décharge
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">Rédigez le texte légal imprimé sur la décharge. Utilisez des variables dynamiques entre crochets.</p>
+              
+              {/* Variable Helper chips */}
+              <div className="flex flex-wrap gap-1.5 mt-3">
+                {['[Client]', '[Marque]', '[Modèle]', '[Plaque]', '[VIN]', '[Entreprise]'].map(variable => (
+                  <button
+                    key={variable}
+                    onClick={() => {
+                      setConfig(prev => ({ ...prev, dischargeText: prev.dischargeText + " " + variable }));
+                    }}
+                    className="bg-slate-100 border border-slate-200 text-slate-600 hover:bg-slate-200 text-[10px] font-black px-2 py-0.5 rounded cursor-pointer transition-colors"
+                  >
+                    + {variable}
+                  </button>
+                ))}
+              </div>
+
+              <textarea
+                value={config.dischargeText}
+                onChange={e => setConfig({ ...config, dischargeText: e.target.value })}
+                rows={4}
+                className="w-full mt-3 bg-white border border-slate-200 rounded-xl p-4 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 leading-relaxed shadow-inner"
+                placeholder="Rédigez ici le texte légal..."
+              />
+
+              <div className="flex justify-end pt-2">
+                <button
+                  onClick={() => saveConfig(config)}
+                  className="bg-slate-950 hover:bg-slate-900 text-white font-black px-4 py-2 rounded-xl text-xs shadow-md transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Save size={14} /> Enregistrer l'attestation
+                </button>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* ==================== TAB: AUDIT LOGS ==================== */}
+        {activeTab === 'logs' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-6 animate-fade-in-up max-w-4xl mx-auto">
+            <div className="border-b border-slate-100 pb-4 mb-4">
+              <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
+                <History className="text-blue-600" size={18} />
+                Journal des Actions de Livraison
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">Historique complet et inaltérable de tous les mouvements et programmations effectués.</p>
+            </div>
+
+            {/* List all log entries parsed from sales */}
+            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+              {(() => {
+                // Collect and sort all logs across all sales
+                const allLogs: { saleId: string; client: string; vehicle: string; user: string; action: string; timestamp: string }[] = [];
+                (sales || []).forEach(sale => {
+                  if (sale.deliveryLog) {
+                    sale.deliveryLog.forEach(log => {
+                      allLogs.push({
+                        saleId: sale.id,
+                        client: sale.clientName,
+                        vehicle: `${sale.marque} ${sale.modele}`,
+                        user: log.user,
+                        action: log.action,
+                        timestamp: log.timestamp
+                      });
+                    });
+                  }
+                });
+
+                // Sort descending
+                allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+                if (allLogs.length === 0) {
+                  return (
+                    <div className="text-center py-12 text-slate-400 border border-dashed border-slate-100 rounded-xl">
+                      <History className="mx-auto mb-2 text-slate-200" size={24} />
+                      <p className="text-xs font-bold">Aucune activité enregistrée</p>
+                    </div>
+                  );
+                }
+
+                return allLogs.map((log, idx) => (
+                  <div key={idx} className="bg-slate-50/50 border border-slate-200/40 p-4 rounded-xl flex items-start justify-between gap-4 text-xs">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-extrabold text-slate-800">{log.user}</span>
+                        <span className="text-slate-400 font-bold">•</span>
+                        <span className="text-slate-500 font-bold">{log.action}</span>
+                      </div>
+                      <div className="text-slate-400 font-bold text-[10px] uppercase">
+                        Dossier : {log.client} ({log.vehicle})
+                      </div>
+                    </div>
+                    <span className="text-slate-400 font-bold text-[10px] shrink-0 font-mono">
+                      {new Date(log.timestamp).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ==================== DRAWER: PLAN FROM CALENDAR ==================== */}
+      {isPlanningSale && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 relative animate-scale-up">
+            <button 
+              onClick={() => setIsPlanningSale(null)} 
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 cursor-pointer"
+            >
+              <X size={20} />
+            </button>
+            
+            <h3 className="font-extrabold text-slate-900 text-lg mb-2">Programmer la Livraison</h3>
+            <p className="text-xs text-slate-500 mb-4">Configurez le rendez-vous pour <span className="font-bold text-slate-800">{isPlanningSale.clientName}</span>.</p>
+            
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 mb-4 space-y-1 text-xs text-slate-700">
+              <div className="font-bold">{isPlanningSale.marque} {isPlanningSale.modele}</div>
+              <div className="font-mono text-slate-500">VIN : {isPlanningSale.vin || 'N/A'} • Immat : {isPlanningSale.plaque || 'N/A'}</div>
+            </div>
+
+            <div className="space-y-4 text-sm">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Date de rendez-vous</label>
+                <input 
+                  type="date" 
+                  value={selectedDate} 
+                  onChange={e => setSelectedDate(e.target.value)} 
+                  className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none font-bold" 
+                />
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Créneau horaire libre</label>
+                <select 
+                  value={planningSlot} 
+                  onChange={e => setPlanningSlot(e.target.value)} 
+                  className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none bg-white font-bold"
+                >
+                  {config.slots.map(slot => {
+                    // Check if slot already occupied on this date
+                    const isOccupied = (sales || []).some(s => s.deliveryDate === selectedDate && s.deliverySlot === slot && s.deliveryStatus === 'programmee');
+                    return (
+                      <option key={slot} value={slot} disabled={isOccupied}>
+                        {slot} {isOccupied ? " (Déjà réservé)" : " (Disponible)"}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <button 
+                onClick={() => handleScheduleDelivery(isPlanningSale, selectedDate, planningSlot)}
+                className="w-full bg-slate-950 hover:bg-slate-900 text-white font-black py-2.5 rounded-xl shadow-md transition-colors text-sm flex items-center justify-center gap-1.5 mt-2 cursor-pointer"
+              >
+                <Check size={16} /> Confirmer le Rendez-vous
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== MODAL: DISCHARGE GENERATION ==================== */}
+      {isGeneratingDischarge && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col relative animate-scale-up">
+            
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center shrink-0">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-lg">Générer la Décharge de Livraison</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Complétez le récépissé de remise des clés.</p>
+              </div>
+              <button 
+                onClick={() => setIsGeneratingDischarge(null)} 
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-5 text-sm">
+              
+              {/* Recipient selection */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Qui réceptionne le véhicule ?</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setDischargeForm({ ...dischargeForm, recipientType: 'client', recipientName: isGeneratingDischarge.clientName })}
+                    className={`p-3 rounded-xl border-2 text-center transition-all cursor-pointer font-bold text-xs ${
+                      dischargeForm.recipientType === 'client'
+                      ? 'border-blue-600 bg-blue-50/20 text-blue-900 font-extrabold'
+                      : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                    }`}
+                  >
+                    👤 Le Client Acheteur
+                  </button>
+                  <button
+                    onClick={() => setDischargeForm({ ...dischargeForm, recipientType: 'other', recipientName: '' })}
+                    className={`p-3 rounded-xl border-2 text-center transition-all cursor-pointer font-bold text-xs ${
+                      dischargeForm.recipientType === 'other'
+                      ? 'border-blue-600 bg-blue-50/20 text-blue-900 font-extrabold'
+                      : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                    }`}
+                  >
+                    ⚙️ Mandataire / Conjoint
+                  </button>
+                </div>
+              </div>
+
+              {/* Recipient fields if mandataire */}
+              {dischargeForm.recipientType === 'other' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 animate-fade-in-up bg-slate-50 p-4 rounded-xl border border-slate-100">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nom du mandataire</label>
+                    <input 
+                      type="text" 
+                      required
+                      placeholder="ex: Jean Dupon" 
+                      value={dischargeForm.recipientName} 
+                      onChange={e => setDischargeForm({ ...dischargeForm, recipientName: e.target.value })} 
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Pièce d'identité n°</label>
+                    <input 
+                      type="text" 
+                      placeholder="ex: CNI / Passeport" 
+                      value={dischargeForm.recipientId} 
+                      onChange={e => setDischargeForm({ ...dischargeForm, recipientId: e.target.value })} 
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" 
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Checklist items */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Documents et éléments remis</label>
+                <div className="grid grid-cols-2 gap-2 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                  {Object.entries(dischargeForm.checkedItems).map(([key, value]) => {
+                    const formattedLabel = key.replace(/_/g, ' ');
+                    return (
+                      <label key={key} className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={value}
+                          onChange={(e) => {
+                            setDischargeForm({
+                              ...dischargeForm,
+                              checkedItems: {
+                                ...dischargeForm.checkedItems,
+                                [key]: e.target.checked
+                              }
+                            });
+                          }}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
+                        />
+                        <span className="uppercase">{formattedLabel}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Extra text comment if AUTRE checked */}
+              {dischargeForm.checkedItems.AUTRE && (
+                <div className="animate-fade-in-up">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Détails de l'élément remis</label>
+                  <input 
+                    type="text" 
+                    placeholder="ex: Tapis de sol, gilets de sécurité, etc." 
+                    value={dischargeForm.autreCommentaire} 
+                    onChange={e => setDischargeForm({ ...dischargeForm, autreCommentaire: e.target.value })} 
+                    className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700" 
+                  />
+                </div>
+              )}
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-slate-100 flex justify-end gap-3 shrink-0">
+              <button 
+                onClick={() => setIsGeneratingDischarge(null)}
+                className="text-xs text-slate-600 hover:text-slate-900 font-bold px-4 py-2 border border-slate-200 bg-white rounded-lg cursor-pointer"
+              >
+                Annuler
+              </button>
+              <button 
+                onClick={triggerPrintDischarge}
+                disabled={dischargeForm.recipientType === 'other' && !dischargeForm.recipientName}
+                className="text-xs bg-slate-950 hover:bg-slate-900 text-white font-black px-5 py-2 rounded-lg shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Printer size={14} /> Imprimer & Générer la Décharge
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};

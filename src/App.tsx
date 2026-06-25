@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, CheckCircle2, LogOut, Users, Edit2, Check, KeyRound, LayoutDashboard, Car, ShieldCheck, Activity, Menu, X, Trash2, TrendingUp } from 'lucide-react';
+import { Loader2, CheckCircle2, LogOut, Users, Edit2, Check, KeyRound, LayoutDashboard, Car, ShieldCheck, Activity, Menu, X, Trash2, TrendingUp, Calendar as CalendarIcon, Clock } from 'lucide-react';
 import { AppProvider, useApp } from './lib/context';
 import { auth, signOut, db, doc, setDoc, getUserDocPath } from './lib/firebase';
 import { CustomLogo } from './components/CustomLogo';
@@ -11,6 +11,8 @@ import { TeamManagement } from './components/TeamManagement';
 import { SuperAdmin } from './components/SuperAdmin';
 import { CompanyManagement } from './components/CompanyManagement';
 import { AdminPerformanceDashboard } from './components/AdminPerformanceDashboard';
+import { DeliveryCalendar } from './components/DeliveryCalendar';
+import { ClientBooking } from './components/ClientBooking';
 import { Sale } from './types';
 // PDF parsing logic pulled into helper to keep App clean
 const processPDFFile = async (
@@ -203,6 +205,11 @@ const MainAppContent: React.FC = () => {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showManageCompanies, setShowManageCompanies] = useState(false);
 
+  const currentCompanyDetails = userProfile?.companiesDetails?.find(
+    c => c.name.toUpperCase() === userProfile?.companyId?.toUpperCase()
+  );
+  const companyLogo = currentCompanyDetails?.logoUrl;
+
   useEffect(() => {
     if (userProfile?.companyId) {
       setNewCompanyName(userProfile.companyId);
@@ -225,6 +232,8 @@ const MainAppContent: React.FC = () => {
         setCurrentView('detail');
       } else if (hash === '#pdf_validation') {
         setCurrentView('pdf_validation');
+      } else if (hash === '#delivery_calendar') {
+        setCurrentView('delivery_calendar');
       } else if (hash === '#perf_dashboard') {
         if (userProfile?.role === 'admin') {
           setCurrentView('perf_dashboard');
@@ -243,7 +252,13 @@ const MainAppContent: React.FC = () => {
     if (window.location.hash) {
       handleHashChange();
     } else if (userProfile) {
-      window.location.hash = userProfile.role === 'admin' ? 'perf_dashboard' : 'dashboard';
+      if (userProfile.role === 'admin') {
+        window.location.hash = 'perf_dashboard';
+      } else if (userProfile.role === 'park_manager') {
+        window.location.hash = 'delivery_calendar';
+      } else {
+        window.location.hash = 'dashboard';
+      }
     }
 
     return () => window.removeEventListener('hashchange', handleHashChange);
@@ -482,6 +497,16 @@ const MainAppContent: React.FC = () => {
               <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Tableau de bord</div>
             </button>
 
+            <button 
+              onClick={() => window.location.hash = 'delivery_calendar'}
+              className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${currentView === 'delivery_calendar' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
+              title="Calendrier de livraison"
+            >
+              <CalendarIcon size={20} />
+              <span className="text-[9px] font-bold tracking-tight block md:hidden lg:block">Agenda</span>
+              <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Calendrier de livraison</div>
+            </button>
+
             {userProfile?.role === 'admin' && (
               <button 
                 onClick={() => window.location.hash = 'perf_dashboard'}
@@ -711,12 +736,16 @@ const MainAppContent: React.FC = () => {
                 <span>Sales Dygital</span>
                 <span>/</span>
                 <span className="text-slate-600 font-black">
-                  {currentView === 'dashboard' ? 'Bons de commande' : currentView === 'detail' ? 'Détails du dossier' : 'Validation' }
+                  {currentView === 'dashboard' ? 'Bons de commande' : currentView === 'detail' ? 'Détails du dossier' : currentView === 'delivery_calendar' ? 'Calendrier de livraison' : 'Validation' }
                 </span>
               </div>
               <div className="flex items-center gap-2 group mt-0.5">
-                <div className="w-5 h-5 rounded bg-slate-100 flex items-center justify-center border border-slate-200 text-[10px] font-black text-slate-600">
-                  {userProfile?.companyId?.charAt(0) || 'E'}
+                <div className="w-5 h-5 rounded bg-slate-100 flex items-center justify-center border border-slate-200 text-[10px] font-black text-slate-600 overflow-hidden shrink-0">
+                  {companyLogo ? (
+                    <img src={companyLogo} alt="Logo" className="w-full h-full object-contain" />
+                  ) : (
+                    userProfile?.companyId?.charAt(0) || 'E'
+                  )}
                 </div>
                 {isEditingCompany && userProfile?.role === 'admin' ? (
                   <form onSubmit={handleRenameCompany} className="flex items-center gap-1">
@@ -809,6 +838,9 @@ const MainAppContent: React.FC = () => {
                   }}
                 />
               )}
+              {currentView === 'delivery_calendar' && (
+                <DeliveryCalendar onShowToast={showToast} />
+              )}
               {currentView === 'perf_dashboard' && (
                 <AdminPerformanceDashboard />
               )}
@@ -870,6 +902,25 @@ const MainAppContent: React.FC = () => {
 };
 
 export default function App() {
+  const [bookingId, setBookingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const checkHash = () => {
+      if (window.location.hash.startsWith('#reserve/')) {
+        setBookingId(window.location.hash.split('#reserve/')[1]);
+      } else {
+        setBookingId(null);
+      }
+    };
+    checkHash();
+    window.addEventListener('hashchange', checkHash);
+    return () => window.removeEventListener('hashchange', checkHash);
+  }, []);
+
+  if (bookingId) {
+    return <ClientBooking saleId={bookingId} onShowToast={(m, t) => console.log(m, t)} />;
+  }
+
   return (
     <AppProvider>
       <MainAppContent />

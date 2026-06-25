@@ -118,7 +118,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setUserProfile(profile);
 
         let finalDatabaseUid = userAuth.uid;
-        if (profile.role === 'commercial') {
+        if (profile.role === 'commercial' || profile.role === 'park_manager') {
           if (profile.adminUid) {
             finalDatabaseUid = profile.adminUid;
           } else if (profile.companyId) {
