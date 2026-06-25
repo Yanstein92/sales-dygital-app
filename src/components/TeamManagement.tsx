@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, Shield, ShieldAlert, CheckCircle2, ShieldCheck, X, Plus, Loader2, Mail, Lock, UserPlus } from 'lucide-react';
-import { db, collection, query, where, getDocs, updateDoc, doc } from '../lib/firebase';
+import { db, collection, query, where, getDocs, updateDoc, doc, setDoc, getUserDocPath } from '../lib/firebase';
 import { useApp } from '../lib/context';
 import { UserProfile } from '../types';
 
@@ -27,6 +27,7 @@ export const TeamManagement: React.FC<{ onClose: () => void, onShowToast: (m: st
         body: JSON.stringify({ role: newRole })
       });
       if (res.ok) {
+        try { await setDoc(doc(db, getUserDocPath(member.uid)), { role: newRole }, { merge: true }); } catch (e) {}
         onShowToast(`Rôle mis à jour: ${newRole}`, "success");
         refreshTeam();
       } else {
@@ -62,6 +63,19 @@ export const TeamManagement: React.FC<{ onClose: () => void, onShowToast: (m: st
       if (!response.ok) {
         throw new Error(data.error || 'Erreur lors de la création du compte');
       }
+
+      // Sync user to canvas doc so it gets read by frontend correctly
+      try {
+        await setDoc(doc(db, getUserDocPath(data.uid)), {
+          uid: data.uid,
+          email: newEmail,
+          name: newName,
+          companyId: userProfile.companyId,
+          adminUid: userProfile.uid,
+          role: "commercial",
+          testMode: userProfile.testMode || false,
+        }, { merge: true });
+      } catch (e) {}
       
       onShowToast("Commercial ajouté avec succès !", "success");
       setShowAddForm(false);
@@ -169,7 +183,7 @@ export const TeamManagement: React.FC<{ onClose: () => void, onShowToast: (m: st
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
                     <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-md flex items-center gap-1 ${m.role === 'admin' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'}`}>
                       {m.role === 'admin' ? <ShieldCheck size={12} /> : <User size={12} />} 
                       {m.role}
@@ -180,6 +194,33 @@ export const TeamManagement: React.FC<{ onClose: () => void, onShowToast: (m: st
                       className="text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors"
                     >
                       {m.role === 'admin' ? 'Rétrograder' : 'Promouvoir'}
+                    </button>
+                    <button 
+                      onClick={async () => {
+                        if (m.uid === userProfile.uid) {
+                          onShowToast("Vous ne pouvez pas supprimer votre propre compte.", "error");
+                          return;
+                        }
+                        if (confirm(`Êtes-vous sûr de vouloir supprimer ${m.name} ? Cette action est irréversible.`)) {
+                          try {
+                            const res = await fetch(`/api/users/${m.uid}`, { method: 'DELETE' });
+                            if (res.ok) {
+                              onShowToast("Membre supprimé avec succès", "success");
+                              refreshTeam();
+                            } else {
+                              const data = await res.json();
+                              onShowToast(data.error || "Erreur lors de la suppression.", "error");
+                            }
+                          } catch (err) {
+                            onShowToast("Erreur réseau.", "error");
+                          }
+                        }
+                      }}
+                      disabled={m.uid === userProfile.uid}
+                      className="text-xs font-bold bg-red-600 hover:bg-red-500 text-white p-1.5 rounded-lg disabled:opacity-50 transition-colors"
+                      title="Supprimer le membre"
+                    >
+                      <X size={16} />
                     </button>
                   </div>
                 </div>

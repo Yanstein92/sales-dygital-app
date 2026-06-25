@@ -24,19 +24,27 @@ import {
   getDocs,
   limit,
   or,
+  collectionGroup
 } from 'firebase/firestore';
 
 // Warning: For a client side app, the VITE_ prefixed keys must be added to .env
 // We keep fallbacks to avoid breaking the user's current testing flow until they configure VITE_ secrets.
-const env = (import.meta as any).env || {};
+const envApiKey = (import.meta as any).env.VITE_FIREBASE_API_KEY;
+const isEnvApiKeyValid = envApiKey && envApiKey.startsWith('AIza');
+
+const getEnvParam = (key: string, dummyValue: string, fallback: string) => {
+  const v = (import.meta as any).env[key];
+  return (v && v !== dummyValue && isEnvApiKeyValid) ? v : fallback;
+};
+
 const firebaseConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY || "AIzaSyD4mE-5BO0kRVmonutJoJx6PQsuVl7OqSE",
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || "sales-dygital.firebaseapp.com",
-  projectId: env.VITE_FIREBASE_PROJECT_ID || "sales-dygital",
-  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || "sales-dygital.firebasestorage.app",
-  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || "903151549257",
-  appId: env.VITE_FIREBASE_APP_ID || "1:903151549257:web:7615f78e85a39173887898",
-  measurementId: env.VITE_FIREBASE_MEASUREMENT_ID || "G-5XEJ6BGMMP"
+  apiKey: isEnvApiKeyValid ? envApiKey : "AIzaSyD4mE-5BO0kRVmonutJoJx6PQsuVl7OqSE",
+  authDomain: getEnvParam('VITE_FIREBASE_AUTH_DOMAIN', 'salesdygital321321', "sales-dygital.firebaseapp.com"),
+  projectId: getEnvParam('VITE_FIREBASE_PROJECT_ID', 'salesdygital321321', "sales-dygital"),
+  storageBucket: getEnvParam('VITE_FIREBASE_STORAGE_BUCKET', 'salesdygital321321', "sales-dygital.firebasestorage.app"),
+  messagingSenderId: getEnvParam('VITE_FIREBASE_MESSAGING_SENDER_ID', 'salesdygital321321', "903151549257"),
+  appId: getEnvParam('VITE_FIREBASE_APP_ID', 'salesdygital321321', "1:903151549257:web:7615f78e85a39173887898"),
+  measurementId: getEnvParam('VITE_FIREBASE_MEASUREMENT_ID', 'salesdygital321321', "G-5XEJ6BGMMP")
 };
 
 // Check if embedded Canvas Auth is present
@@ -85,4 +93,5 @@ export {
   getDocs,
   limit,
   or,
+  collectionGroup,
 };

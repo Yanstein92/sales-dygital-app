@@ -9,7 +9,8 @@ export interface Payment {
   saleId: string;
   type: string; // VIR, ESP, CHQ, CB, AUTRES
   payer: string;
-  date: string;
+  date: string; // Used as Date de Virement / Emission
+  encaissementDate?: string; // Date d'encaissement effective
   amount: number;
 }
 
@@ -34,8 +35,13 @@ export interface Sale {
   welcomeEmailSent?: boolean;
   
   // Nouveaux champs demandés :
-  factureStatus?: 'non_facture' | 'facture' | 'solde';
+  factureStatus?: 'non_facture' | 'facture' | 'a_rembourser' | 'rembourse' | 'solde';
   releaseStatus?: 'non_sorti' | 'programmee' | 'sorti' | 'sorti_tpd';
+  
+  refundAmount?: number;
+  refundDate?: string;
+  refundMethod?: string;
+  refundDetails?: string;
 }
 
 export interface UserProfile {

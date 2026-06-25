@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, CheckCircle2, LogOut, Users } from 'lucide-react';
+import { Loader2, CheckCircle2, LogOut, Users, Edit2, Check } from 'lucide-react';
 import { AppProvider, useApp } from './lib/context';
-import { auth, signOut } from './lib/firebase';
+import { auth, signOut, db, doc, setDoc, getUserDocPath } from './lib/firebase';
 import { CustomLogo } from './components/CustomLogo';
 import { Login } from './components/Login';
 import { Dashboard } from './components/Dashboard';
@@ -10,7 +10,6 @@ import { PdfValidation } from './components/PdfValidation';
 import { TeamManagement } from './components/TeamManagement';
 import { SuperAdmin } from './components/SuperAdmin';
 import { Sale } from './types';
-
 // PDF parsing logic pulled into helper to keep App clean
 const processPDFFile = async (
   file: File, 
@@ -22,10 +21,12 @@ const processPDFFile = async (
 ) => {
   setIsLoading(true);
   try {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
     const arrayBuffer = await file.arrayBuffer();
-    const pdfjsLib = (window as any).pdfjsLib;
-    if (!pdfjsLib) throw new Error("PDF.js non chargé");
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
     let fullText = '';
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
@@ -92,7 +93,7 @@ const processPDFFile = async (
 };
 
 const MainAppContent: React.FC = () => {
-  const { userAuth, userProfile, isDbLoading, sales } = useApp();
+  const { userAuth, userProfile, isDbLoading, sales, teamMembers } = useApp();
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [draftExtraction, setDraftExtraction] = useState<any>(null);
@@ -103,17 +104,16 @@ const MainAppContent: React.FC = () => {
   const [adminPassword, setAdminPassword] = useState('');
   const [isAdminPath, setIsAdminPath] = useState(window.location.pathname === '/salesadmin');
 
-  useEffect(() => {
-    //
-    if (!document.getElementById('pdfjs-script')) {
-      const script = document.createElement('script');
-      script.id = 'pdfjs-script';
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-      script.async = true;
-      script.onload = () => { if ((window as any).pdfjsLib) (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; };
-      document.body.appendChild(script);
-    }
+  const [isEditingCompany, setIsEditingCompany] = useState(false);
+  const [newCompanyName, setNewCompanyName] = useState('');
 
+  useEffect(() => {
+    if (userProfile?.companyId) {
+      setNewCompanyName(userProfile.companyId);
+    }
+  }, [userProfile?.companyId]);
+
+  useEffect(() => {
     const handleLocationChange = () => setIsAdminPath(window.location.pathname === '/salesadmin');
     window.addEventListener('popstate', handleLocationChange);
     return () => window.removeEventListener('popstate', handleLocationChange);
@@ -122,6 +122,57 @@ const MainAppContent: React.FC = () => {
   const showToast = (message: string, type: 'success' | 'error' = 'success', duration = 4000) => {
     setToast({ show: true, message, type });
     setTimeout(() => setToast({ show: false, message: '', type: 'success' }), duration);
+  };
+
+  const handleRenameCompany = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newCompanyName.trim() || newCompanyName.trim() === userProfile?.companyId) {
+      setIsEditingCompany(false);
+      return;
+    }
+    try {
+      setIsLoading(true);
+      const newName = newCompanyName.trim();
+      const promises = teamMembers.flatMap(member => [
+        fetch(`/api/users/${member.uid}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId: newName })
+        }),
+        setDoc(doc(db, getUserDocPath(member.uid)), { companyId: newName }, { merge: true })
+      ]);
+      // Ensure current user is updated in the API
+      if (userAuth?.uid) {
+        promises.push(
+          fetch(`/api/users/${userAuth.uid}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId: newName })
+          })
+        );
+        // Also update local canvas document directly so frontend reads it properly on load
+        const updatedProfile = { 
+          ...userProfile, 
+          companyId: newName,
+          uid: userAuth.uid,
+          email: userAuth.email || '',
+          name: userProfile?.name || userAuth.email?.split('@')[0] || 'Utilisateur',
+          role: userProfile?.role || 'admin'
+        };
+        promises.push(
+          setDoc(doc(db, getUserDocPath(userAuth.uid)), updatedProfile, { merge: true })
+        );
+      }
+      
+      await Promise.all(promises);
+      showToast("Nom de l'entreprise mis à jour", "success");
+      setTimeout(() => window.location.reload(), 800);
+    } catch (err) {
+      showToast("Erreur lors de la mise à jour", "error");
+    } finally {
+      setIsLoading(false);
+      setIsEditingCompany(false);
+    }
   };
 
   // ----- Admin Route Handler -----
@@ -195,7 +246,7 @@ const MainAppContent: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 font-sans text-slate-900 pb-12 relative">
+    <div className="min-h-screen bg-slate-100 font-sans text-slate-900 pb-6 relative flex flex-col">
       {toast.show && (
         <div className={`fixed bottom-4 right-4 px-6 py-3 rounded-xl shadow-2xl font-bold flex items-center gap-2 z-50 text-white animate-fade-in-up ${toast.type === 'error' ? 'bg-red-600' : 'bg-emerald-600'}`}>
           <CheckCircle2 size={20} />{toast.message}
@@ -212,25 +263,69 @@ const MainAppContent: React.FC = () => {
         </div>
       )}
 
-      <header className="bg-slate-900 text-white p-4 shadow-md sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <CustomLogo className="w-8 h-8 text-blue-400" />
-            <h1 className="text-2xl font-black tracking-tight">Sales - Dygital <span className="text-blue-400 font-medium text-lg ml-2 hidden md:inline">Espace Entreprise</span></h1>
+      <header className="bg-slate-950 border-b border-slate-800 text-white shadow-2xl sticky top-0 z-30 transition-colors">
+        <div className="max-w-7xl mx-auto flex items-center justify-between px-4 sm:px-6 py-4">
+          <div className="flex items-center space-x-4 sm:space-x-6">
+            <div className="flex items-center space-x-3 group cursor-pointer" onClick={() => setCurrentView('dashboard')}>
+               {/* SAAS LOGO PLACEHOLDER */}
+               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center shadow-lg shadow-blue-900/20 overflow-hidden ring-1 ring-white/10 relative">
+                  <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                  <CustomLogo className="w-6 h-6 text-white group-hover:scale-110 transition-transform duration-300" />
+                  {/* Replace CustomLogo with <img src="/logo-saas.svg" /> here */}
+               </div>
+               <div className="flex flex-col">
+                  <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white/90 leading-tight">Sales <span className="text-blue-400">Dygital</span></h1>
+                  <span className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-500 tracking-wider">Espace de Gestion</span>
+               </div>
+            </div>
+            
+            <div className="h-8 w-px bg-slate-800 hidden md:block"></div>
+            
+            {/* SAAS Client Company Placehoder */}
+            <div className="hidden md:flex items-center gap-2 group relative">
+                 <div className="w-6 h-6 rounded bg-slate-800 flex items-center justify-center border border-slate-700 text-xs font-black text-slate-400">
+                   {userProfile?.companyId?.charAt(0) || 'E'}
+                 </div>
+                 {isEditingCompany && userProfile?.role === 'admin' ? (
+                   <form onSubmit={handleRenameCompany} className="flex items-center gap-1">
+                     <input
+                       type="text"
+                       value={newCompanyName}
+                       onChange={(e) => setNewCompanyName(e.target.value)}
+                       className="bg-slate-800 text-white border border-slate-700 rounded px-2 py-0.5 text-sm outline-none focus:border-blue-500 max-w-[150px]"
+                       autoFocus
+                       onBlur={handleRenameCompany}
+                     />
+                   </form>
+                 ) : (
+                   <div 
+                     className={`flex items-center gap-2 ${userProfile?.role === 'admin' ? 'cursor-pointer hover:text-white transition-colors py-1' : ''}`}
+                     onClick={() => userProfile?.role === 'admin' && setIsEditingCompany(true)}
+                     title={userProfile?.role === 'admin' ? "Renommer l'entreprise" : ""}
+                   >
+                     <span className="text-sm font-bold text-slate-300 group-hover:text-white transition-colors">
+                       {userProfile?.companyId || 'Entreprise'}
+                     </span>
+                     {userProfile?.role === 'admin' && (
+                       <Edit2 size={12} className="text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                     )}
+                   </div>
+                 )}
+            </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
             {userProfile && (
-               <div className="text-xs font-bold text-slate-400 bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700 hidden sm:flex items-center gap-2">
-                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> 
-                 {userProfile.name} ({userProfile.companyId})
+               <div className="text-xs font-bold text-slate-300 bg-slate-900/50 px-3 py-1.5 rounded-full border border-slate-800 hidden lg:flex items-center gap-2 shadow-inner">
+                 <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span> 
+                 {userProfile.name}
                </div>
             )}
             {userProfile?.role === 'admin' && (
-              <button onClick={() => setShowTeam(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm font-bold transition-all shadow-md">
-                <Users size={16} /> <span className="hidden sm:inline">Équipe</span>
+              <button onClick={() => setShowTeam(true)} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 sm:py-1.5 rounded-lg text-sm font-bold transition-all shadow-md border border-slate-700 focus:ring-2 ring-slate-500/50">
+                <Users size={16} className="text-blue-400" /> <span className="hidden sm:inline">Équipe</span>
               </button>
             )}
-            <button onClick={handleLogout} className="flex items-center gap-2 bg-slate-800 hover:bg-red-600 border border-slate-700 hover:border-red-500 text-white px-3 py-1.5 rounded text-sm font-bold transition-all shadow-sm">
+            <button onClick={handleLogout} className="flex items-center gap-2 bg-slate-900 hover:bg-red-950/40 border border-slate-800 hover:border-red-900 text-slate-400 hover:text-red-400 px-3 py-2 sm:py-1.5 rounded-lg text-sm font-bold transition-all shadow-sm focus:ring-2 ring-red-900">
               <LogOut size={16} /> <span className="hidden sm:inline">Déconnexion</span>
             </button>
           </div>
@@ -284,6 +379,23 @@ const MainAppContent: React.FC = () => {
           </>
         )}
       </main>
+
+      <footer className="max-w-6xl w-full mx-auto mt-auto py-6 px-4 text-center border-t border-slate-200">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-semibold text-slate-500">
+          <div>
+            Sales Dygital © {new Date().getFullYear()}
+          </div>
+          <a 
+            href="https://stats.uptimerobot.com/EjAcm5FoSR" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="hover:text-slate-800 transition-colors flex items-center gap-1.5"
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            Statut du Système (UptimeRobot)
+          </a>
+        </div>
+      </footer>
 
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } } 

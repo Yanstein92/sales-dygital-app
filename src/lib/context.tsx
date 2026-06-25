@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
-import { auth, db, getUserPath, getUserDocPath, onAuthStateChanged, collection, onSnapshot, signInWithCustomToken, doc, getDoc, query, where, limit, getDocs, or } from './firebase';
+import { auth, db, getUserPath, getUserDocPath, onAuthStateChanged, collection, onSnapshot, signInWithCustomToken, doc, getDoc, setDoc, query, where, limit, getDocs, or } from './firebase';
 import { Sale, Payment, UserProfile } from '../types';
 
 interface AppContextType {
@@ -84,17 +84,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const profileSnap = await getDoc(profileRef);
         
         let profile: UserProfile;
-        if (profileSnap.exists()) {
+        if (profileSnap.exists() && profileSnap.data()?.role) {
           profile = profileSnap.data() as UserProfile;
+          // Ensure base fields
+          if (!profile.uid) profile.uid = userAuth.uid;
+          if (!profile.role) profile.role = 'admin'; // fallback
         } else {
-          // Retro-compatibility: if no profile exists, assume legacy DJCAR admin
+          // Retro-compatibility: if no profile exists or role missing, assume legacy DJCAR admin
           profile = {
+            ...(profileSnap.exists() ? profileSnap.data() : {}),
             uid: userAuth.uid,
             email: userAuth.email || '',
-            companyId: 'Toutes', 
+            companyId: profileSnap.exists() ? profileSnap.data().companyId || 'Toutes' : 'Toutes', 
             role: 'admin',
-            name: userAuth.email?.split('@')[0] || 'Utilisateur'
+            name: profileSnap.exists() ? profileSnap.data().name || userAuth.email?.split('@')[0] || 'Utilisateur' : userAuth.email?.split('@')[0] || 'Utilisateur'
           };
+          // Try to auto-save to ensure consistency in db if it was missing
+          if (!profileSnap.exists() || !profileSnap.data()?.role) {
+            try { setDoc(profileRef, profile, { merge: true }); } catch (e) {}
+          }
         }
         setUserProfile(profile);
 

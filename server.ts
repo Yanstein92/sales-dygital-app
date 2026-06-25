@@ -100,7 +100,7 @@ async function startServer() {
         name: name,
         companyId: companyId || '',
         adminUid: adminUid || '',
-        role: "commercial",
+        role: req.body.role || "commercial",
         testMode: testMode || false,
       });
 

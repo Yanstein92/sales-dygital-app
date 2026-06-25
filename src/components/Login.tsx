@@ -48,7 +48,8 @@ export const Login: React.FC<LoginProps> = ({ onShowToast }) => {
       if (isRegistering) {
         setAuthError(err.code === 'auth/email-already-in-use' ? 'Cet email est déjà utilisé.' : "Erreur lors de la création du compte.");
       } else {
-        setAuthError("Email ou mot de passe incorrect.");
+        console.error("Login detail err:", err);
+        setAuthError(`Erreur: ${err.message || "Email ou mot de passe incorrect."}`);
       }
     } finally {
       setIsLoading(false);
@@ -239,9 +240,19 @@ export const Login: React.FC<LoginProps> = ({ onShowToast }) => {
         
         <div className="mt-8 text-center border-t border-white/10 pt-6">
           <p className="text-xs text-slate-400 mb-2">Application propulsée par <span className="font-bold text-slate-300">Dygital</span></p>
-          <button onClick={() => setShowContactPopup(true)} className="text-sm font-bold text-blue-400 hover:text-blue-300 hover:underline transition-colors">
+          <button onClick={() => setShowContactPopup(true)} className="text-sm font-bold text-blue-400 hover:text-blue-300 hover:underline transition-colors block mx-auto">
             Intéressé ? En savoir plus ou nous contacter
           </button>
+          
+          <a 
+            href="https://stats.uptimerobot.com/EjAcm5FoSR" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="mt-4 inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-300 transition-colors font-bold"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            Statut du service (Uptime)
+          </a>
         </div>
       </div>
     </div>
