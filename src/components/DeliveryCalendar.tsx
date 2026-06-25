@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, Clock, Plus, X, ChevronLeft, ChevronRight, User, Car, Settings, Check, CheckCircle2, AlertCircle, Trash2, History, ClipboardCopy, Printer, ArrowRight, Save, Info, RefreshCw } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Plus, X, ChevronLeft, ChevronRight, User, Car, Settings, Check, CheckCircle2, AlertCircle, Trash2, History, ClipboardCopy, Printer, ArrowRight, Save, Info, RefreshCw, Bell } from 'lucide-react';
 import { db, doc, setDoc, getDoc, getUserDocPath } from '../lib/firebase';
 import { useApp } from '../lib/context';
 import { Sale } from '../types';
@@ -14,6 +14,7 @@ interface DeliveryConfig {
   dischargeText: string;
   maxDeliveriesPerDay?: number;
   blockedPeriods?: { from: string; to: string; reason?: string }[];
+  reminderDaysBefore?: number;
 }
 
 export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast }) => {
@@ -44,6 +45,8 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
   // Active planning state
   const [isPlanningSale, setIsPlanningSale] = useState<Sale | null>(null);
   const [planningSlot, setPlanningSlot] = useState<string>('');
+  const [viewingVehicleSale, setViewingVehicleSale] = useState<Sale | null>(null);
+  const [isAssigningForSlot, setIsAssigningForSlot] = useState<{ date: string; slot: string } | null>(null);
 
   // Discharge Generation State
   const [isGeneratingDischarge, setIsGeneratingDischarge] = useState<Sale | null>(null);
@@ -289,6 +292,19 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
     const link = `${window.location.origin}/#reserve/${saleId}`;
     navigator.clipboard.writeText(link);
     onShowToast("Lien de réservation copié dans le presse-papiers !", "success");
+  };
+
+  const handleDropOnCell = (saleId: string, dateKey: string) => {
+    const sale = sales.find(s => s.id === saleId);
+    if (sale) {
+      setSelectedDate(dateKey);
+      setIsPlanningSale(sale);
+      const occupiedSlots = (sales || [])
+        .filter(s => s.deliveryDate === dateKey && s.deliveryStatus === 'programmee')
+        .map(s => s.deliverySlot);
+      const firstAvailableSlot = config.slots.find(slot => !occupiedSlots.includes(slot)) || config.slots[0] || '';
+      setPlanningSlot(firstAvailableSlot);
+    }
   };
 
   // Add a custom slot
@@ -692,11 +708,20 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                   </div>
                 ) : (
                   pendingPlanificationSales.map(sale => (
-                    <div key={sale.id} className="bg-slate-50 hover:bg-slate-100/80 border border-slate-200/50 hover:border-slate-300 p-4 rounded-xl transition-all space-y-3 shadow-inner">
+                    <div 
+                      key={sale.id} 
+                      draggable="true"
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/plain", sale.id);
+                      }}
+                      onClick={() => setViewingVehicleSale(sale)}
+                      className="bg-slate-50 hover:bg-blue-50/40 border border-slate-200/50 hover:border-blue-300 p-4 rounded-xl transition-all space-y-3 shadow-inner cursor-grab active:cursor-grabbing hover:shadow-md group/card"
+                      title="Glisser vers une date du calendrier ou cliquer pour voir les détails"
+                    >
                       <div className="flex justify-between items-start">
                         <div className="min-w-0">
                           <span className="bg-amber-100 text-amber-800 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-amber-200">Facturé</span>
-                          <h4 className="font-extrabold text-slate-800 text-sm mt-1.5 truncate">{sale.marque} {sale.modele}</h4>
+                          <h4 className="font-extrabold text-slate-800 text-sm mt-1.5 truncate group-hover/card:text-blue-900 transition-colors">{sale.marque} {sale.modele}</h4>
                           <p className="text-xs text-slate-500 truncate">Client: {sale.clientName}</p>
                         </div>
                         <div className="text-right shrink-0">
@@ -706,14 +731,18 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
 
                       <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/50">
                         <button 
-                          onClick={() => copyBookingLink(sale.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyBookingLink(sale.id);
+                          }}
                           className="text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-200 font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white transition-colors flex items-center gap-1 cursor-pointer"
                           title="Copier le lien public de réservation client"
                         >
                           <ClipboardCopy size={13} /> Lien client
                         </button>
                         <button 
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setIsPlanningSale(sale);
                             setPlanningSlot(config.slots[0] || '');
                           }}
@@ -790,14 +819,25 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                       <button
                         key={idx}
                         onClick={() => setSelectedDate(dateKey)}
+                        onDragOver={(e) => {
+                          if (!isBlockedDate) {
+                            e.preventDefault();
+                          }
+                        }}
+                        onDrop={(e) => {
+                          if (!isBlockedDate) {
+                            const saleId = e.dataTransfer.getData("text/plain");
+                            handleDropOnCell(saleId, dateKey);
+                          }
+                        }}
                         className={`h-20 p-1 rounded-xl border flex flex-col justify-between items-start transition-all cursor-pointer relative ${
                           isBlockedDate
                           ? 'bg-red-50/30 border-red-100 text-slate-500'
                           : cell.isCurrentMonth ? 'bg-white' : 'bg-slate-50/50 text-slate-400'
                         } ${
                           isSelected 
-                          ? 'border-blue-600 ring-2 ring-blue-500/10 shadow-md' 
-                          : 'border-slate-100 hover:border-slate-300'
+                          ? 'border-blue-600 ring-2 ring-blue-500/10 shadow-md bg-blue-50/10' 
+                          : 'border-slate-100 hover:border-slate-300 hover:bg-slate-50/40'
                         }`}
                       >
                         <div className="flex justify-between items-center w-full">
@@ -928,10 +968,9 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                           <div>
                             <button 
                               onClick={() => {
-                                // Find any sale to assign, opens the modal/drawer on left side
-                                onShowToast("Sélectionnez un véhicule dans la colonne de gauche et cliquez sur Placer", "error");
+                                setIsAssigningForSlot({ date: selectedDate, slot: slot });
                               }}
-                              className="text-xs text-slate-600 hover:text-slate-900 font-bold px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+                              className="text-xs text-slate-600 hover:text-slate-900 font-bold px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
                             >
                               + Assigner un véhicule
                             </button>
@@ -1056,37 +1095,75 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
 
             {/* Limit and Blocked Periods Row */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Daily Capacity Limit */}
-              <div className="bg-slate-50 border border-slate-200/60 p-5 rounded-2xl space-y-3 shadow-inner">
-                <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
-                  <Settings className="text-blue-600" size={16} />
-                  Limite de Livraisons Quotidiennes
-                </h4>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Fixez le nombre maximum de rendez-vous de livraison que les clients peuvent réserver par jour via leur lien public. Les administrateurs et gestionnaires de parc peuvent outrepasser cette limite.
-                </p>
-                <div className="flex items-center gap-3 mt-2">
-                  <input
-                    type="number"
-                    min={1}
-                    max={20}
-                    value={config.maxDeliveriesPerDay || 4}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value) || 4;
-                      setConfig(prev => ({ ...prev, maxDeliveriesPerDay: val }));
-                    }}
-                    className="w-24 bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-black focus:ring-2 focus:ring-blue-500 outline-none text-slate-800"
-                  />
-                  <span className="text-xs font-bold text-slate-500">livraisons max par jour</span>
+              {/* Daily Capacity Limit and Reminders */}
+              <div className="space-y-6">
+                <div className="bg-slate-50 border border-slate-200/60 p-5 rounded-2xl space-y-3 shadow-inner">
+                  <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
+                    <Settings className="text-blue-600" size={16} />
+                    Limite de Livraisons Quotidiennes
+                  </h4>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Fixez le nombre maximum de rendez-vous de livraison que les clients peuvent réserver par jour via leur lien public. Les administrateurs et gestionnaires de parc peuvent outrepasser cette limite.
+                  </p>
+                  <div className="flex items-center gap-3 mt-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={config.maxDeliveriesPerDay || 4}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 4;
+                        setConfig(prev => ({ ...prev, maxDeliveriesPerDay: val }));
+                      }}
+                      className="w-24 bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-black focus:ring-2 focus:ring-blue-500 outline-none text-slate-800"
+                    />
+                    <span className="text-xs font-bold text-slate-500">livraisons max par jour</span>
+                  </div>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => saveConfig(config)}
+                      className="bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs px-4 py-2 rounded-xl transition-all shadow cursor-pointer"
+                    >
+                      Enregistrer la limite
+                    </button>
+                  </div>
                 </div>
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={() => saveConfig(config)}
-                    className="bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs px-4 py-2 rounded-xl transition-all shadow cursor-pointer"
-                  >
-                    Enregistrer la limite
-                  </button>
+
+                <div className="bg-slate-50 border border-slate-200/60 p-5 rounded-2xl space-y-3 shadow-inner animate-fade-in-up">
+                  <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
+                    <Bell className="text-blue-600" size={16} />
+                    Rappels de Livraison
+                  </h4>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Définissez à quel moment les notifications de rappel de livraison doivent s'afficher dans l'application (pour le commercial assigné et le gestionnaire de parc).
+                  </p>
+                  <div className="flex items-center gap-3 mt-2">
+                    <select
+                      value={config.reminderDaysBefore ?? 1}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        setConfig(prev => ({ ...prev, reminderDaysBefore: val }));
+                      }}
+                      className="bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-black focus:ring-2 focus:ring-blue-500 outline-none text-slate-800"
+                    >
+                      <option value={0}>Le jour même de la livraison</option>
+                      <option value={1}>1 jour à l'avance</option>
+                      <option value={2}>2 jours à l'avance</option>
+                      <option value={3}>3 jours à l'avance</option>
+                      <option value={5}>5 jours à l'avance</option>
+                      <option value={7}>7 jours à l'avance</option>
+                    </select>
+                  </div>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => saveConfig(config)}
+                      className="bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs px-4 py-2 rounded-xl transition-all shadow cursor-pointer"
+                    >
+                      Enregistrer le délai de rappel
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1480,6 +1557,170 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* 1. Modal: Détails du véhicule à planifier */}
+      {viewingVehicleSale && (
+        <div 
+          onClick={() => setViewingVehicleSale(null)}
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-xl border border-slate-200/80 max-w-lg w-full overflow-hidden animate-scale-up"
+          >
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <div>
+                <span className="bg-amber-100 text-amber-800 text-[10px] font-black uppercase px-2.5 py-1 rounded-full border border-amber-200">Facturé • En attente de livraison</span>
+                <h3 className="font-extrabold text-slate-900 text-lg mt-2 flex items-center gap-2">
+                  <Car className="text-blue-600" size={18} />
+                  {viewingVehicleSale.marque} {viewingVehicleSale.modele}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setViewingVehicleSale(null)}
+                className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4 text-sm text-slate-700">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Plaque d'immatriculation</span>
+                  <span className="font-bold font-mono text-slate-800 bg-slate-100 border border-slate-200 px-2 py-1 rounded">
+                    {viewingVehicleSale.plaque || "Non renseignée"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Numéro de Châssis (VIN)</span>
+                  <span className="font-bold font-mono text-slate-800 bg-slate-100 border border-slate-200 px-2 py-1 rounded block truncate">
+                    {viewingVehicleSale.vin || "Non renseigné"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-3">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Client & Dossier</span>
+                <p className="font-black text-slate-900 text-base">{viewingVehicleSale.clientName}</p>
+                <p className="text-xs text-slate-500 mt-1">Bon de Commande : N° {viewingVehicleSale.bdcNumber}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-3">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Commercial Assigné</span>
+                  <span className="font-bold text-slate-800">{viewingVehicleSale.commercial || "Non assigné"}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Date de Vente</span>
+                  <span className="font-bold text-slate-800">{viewingVehicleSale.date ? new Date(viewingVehicleSale.date).toLocaleDateString('fr-FR') : "N/A"}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-3">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Couleur</span>
+                  <span className="font-bold text-slate-800">{viewingVehicleSale.color || "Non spécifiée"}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Mise en circulation</span>
+                  <span className="font-bold text-slate-800 font-mono">{viewingVehicleSale.mec || "Non renseignée"}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
+              <button 
+                onClick={() => setViewingVehicleSale(null)}
+                className="text-xs text-slate-600 hover:text-slate-900 font-bold px-4 py-2 border border-slate-200 bg-white rounded-lg cursor-pointer"
+              >
+                Fermer
+              </button>
+              <button 
+                onClick={() => {
+                  setViewingVehicleSale(null);
+                  window.location.hash = `#detail/${viewingVehicleSale.id}`;
+                }}
+                className="text-xs bg-blue-600 hover:bg-blue-500 text-white font-black px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm"
+              >
+                Ouvrir le dossier client
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Modal: Sélectionner un véhicule à assigner */}
+      {isAssigningForSlot && (
+        <div 
+          onClick={() => setIsAssigningForSlot(null)}
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-xl border border-slate-200/80 max-w-md w-full overflow-hidden animate-scale-up"
+          >
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-base">Assigner un Véhicule</h3>
+                <p className="text-xs text-slate-500 mt-1">Sélectionnez un véhicule pour le créneau <span className="font-black text-slate-700">{isAssigningForSlot.slot}</span> du <span className="font-black text-slate-700">{new Date(isAssigningForSlot.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}</span>.</p>
+              </div>
+              <button 
+                onClick={() => setIsAssigningForSlot(null)}
+                className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 max-h-[350px] overflow-y-auto space-y-2">
+              {pendingPlanificationSales.length === 0 ? (
+                <div className="text-center py-8 text-slate-400">
+                  <CheckCircle2 className="mx-auto mb-2 text-slate-200" size={24} />
+                  <p className="text-xs font-bold uppercase tracking-wider">Aucun véhicule disponible</p>
+                  <p className="text-[10px] text-slate-400 mt-1">Tous les véhicules facturés ont déjà été planifiés.</p>
+                </div>
+              ) : (
+                pendingPlanificationSales.map(sale => (
+                  <button
+                    key={sale.id}
+                    onClick={() => {
+                      setIsAssigningForSlot(null);
+                      setIsPlanningSale(sale);
+                      setPlanningSlot(isAssigningForSlot.slot);
+                    }}
+                    className="w-full text-left bg-slate-50 hover:bg-blue-50/50 border border-slate-200/50 hover:border-blue-300 p-3.5 rounded-xl transition-all flex justify-between items-center group cursor-pointer"
+                  >
+                    <div>
+                      <h4 className="font-extrabold text-slate-800 text-xs group-hover:text-blue-900 transition-colors">{sale.marque} {sale.modele}</h4>
+                      <p className="text-[10px] text-slate-500 mt-0.5">Client: {sale.clientName}</p>
+                      <span className="text-[9px] bg-slate-200/60 font-mono text-slate-500 px-1.5 py-0.5 rounded mt-1.5 inline-block">BDC {sale.bdcNumber}</span>
+                    </div>
+                    <span className="text-[10px] text-blue-600 group-hover:translate-x-1 transition-transform font-extrabold flex items-center gap-0.5">
+                      Choisir <ArrowRight size={10} />
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+              <button 
+                onClick={() => setIsAssigningForSlot(null)}
+                className="text-xs text-slate-600 hover:text-slate-900 font-bold px-4 py-2 border border-slate-200 bg-white rounded-lg cursor-pointer"
+              >
+                Fermer
+              </button>
+            </div>
           </div>
         </div>
       )}

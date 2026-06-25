@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { 
   TrendingUp, Users, Banknote, Calendar, Car, BarChart3, 
   ArrowUpRight, AlertCircle, CheckCircle2, PieChart, Info,
-  Filter, RotateCcw, ChevronRight, Coins, ShieldAlert, Briefcase
+  Filter, RotateCcw, ChevronRight, Coins, ShieldAlert, Briefcase,
+  Clock
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useApp } from '../lib/context';
@@ -14,6 +15,7 @@ export const AdminPerformanceDashboard: React.FC = () => {
   // Filter States
   const [filterMonth, setFilterMonth] = useState<string>('all'); // 'all' or 'YYYY-MM'
   const [filterCommercial, setFilterCommercial] = useState<string>('all');
+  const [viewFormat, setViewFormat] = useState<'table' | 'charts'>('table');
 
   // Filter Sales that belong to this Admin's company
   const companySales = useMemo(() => {
@@ -354,7 +356,7 @@ export const AdminPerformanceDashboard: React.FC = () => {
         
         {/* Commercial Team Leaderboard */}
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 lg:col-span-2 flex flex-col">
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 pb-4 border-b border-slate-100">
             <div>
               <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
                 <Users size={18} className="text-indigo-600" />
@@ -362,58 +364,158 @@ export const AdminPerformanceDashboard: React.FC = () => {
               </h2>
               <p className="text-slate-500 text-xs mt-0.5">Ventes, volume d'affaires et restes à percevoir par commercial.</p>
             </div>
+
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 self-start sm:self-center shrink-0">
+              <button 
+                onClick={() => setViewFormat('table')}
+                className={`text-xs font-bold px-3.5 py-1.5 rounded-lg transition-all ${
+                  viewFormat === 'table' ? 'bg-white text-slate-800 shadow-sm font-extrabold' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Tableau
+              </button>
+              <button 
+                onClick={() => setViewFormat('charts')}
+                className={`text-xs font-bold px-3.5 py-1.5 rounded-lg transition-all ${
+                  viewFormat === 'charts' ? 'bg-white text-slate-800 shadow-sm font-extrabold' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Graphiques SVG
+              </button>
+            </div>
           </div>
 
-          <div className="flex-1 overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-100 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                  <th className="py-3 px-2">Commercial</th>
-                  <th className="py-3 px-2 text-center">Dossiers</th>
-                  <th className="py-3 px-2 text-right">Volume (CA)</th>
-                  <th className="py-3 px-2 text-right">Encaissé</th>
-                  <th className="py-3 px-2 text-right text-amber-700">Reste à payer</th>
-                  <th className="py-3 px-2 text-right w-1/4">Répartition</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50 text-sm">
-                {commercialPerformance.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400 font-bold">Aucun commercial n'a de vente enregistrée sur cette période.</td>
+          {viewFormat === 'table' ? (
+            <div className="flex-1 overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                    <th className="py-3 px-2">Commercial</th>
+                    <th className="py-3 px-2 text-center">Dossiers</th>
+                    <th className="py-3 px-2 text-right">Volume (CA)</th>
+                    <th className="py-3 px-2 text-right">Encaissé</th>
+                    <th className="py-3 px-2 text-right text-amber-700">Reste à payer</th>
+                    <th className="py-3 px-2 text-right w-1/4">Répartition</th>
                   </tr>
-                ) : (
-                  commercialPerformance.map(comm => {
-                    const collectRatio = comm.volume > 0 ? (comm.paid / comm.volume) * 100 : 0;
-                    return (
-                      <tr key={comm.name} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="py-3 px-2 font-bold text-slate-800 flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-black text-[10px] text-slate-600">
-                            {comm.name.substring(0, 2).toUpperCase()}
-                          </div>
-                          <span>{comm.name}</span>
-                        </td>
-                        <td className="py-3 px-2 text-center font-black text-slate-700">{comm.salesCount}</td>
-                        <td className="py-3 px-2 text-right font-black text-slate-900">{comm.volume.toLocaleString('fr-FR')} €</td>
-                        <td className="py-3 px-2 text-right text-emerald-600 font-extrabold">{comm.paid.toLocaleString('fr-FR')} €</td>
-                        <td className="py-3 px-2 text-right text-amber-700 font-extrabold">{comm.remaining.toLocaleString('fr-FR')} €</td>
-                        <td className="py-3 px-2 text-right">
-                          <div className="flex flex-col items-end gap-1">
-                            <span className="text-[10px] font-extrabold text-slate-500">{Math.round(collectRatio)}% recouvré</span>
-                            <div className="w-full bg-slate-100 rounded-full h-1.5 max-w-[120px] overflow-hidden">
+                </thead>
+                <tbody className="divide-y divide-slate-50 text-sm">
+                  {commercialPerformance.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400 font-bold">Aucun commercial n'a de vente enregistrée sur cette période.</td>
+                    </tr>
+                  ) : (
+                    commercialPerformance.map(comm => {
+                      const collectRatio = comm.volume > 0 ? (comm.paid / comm.volume) * 100 : 0;
+                      return (
+                        <tr key={comm.name} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="py-3 px-2 font-bold text-slate-800 flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-black text-[10px] text-slate-600">
+                              {comm.name.substring(0, 2).toUpperCase()}
+                            </div>
+                            <span>{comm.name}</span>
+                          </td>
+                          <td className="py-3 px-2 text-center font-black text-slate-700">{comm.salesCount}</td>
+                          <td className="py-3 px-2 text-right font-black text-slate-900">{comm.volume.toLocaleString('fr-FR')} €</td>
+                          <td className="py-3 px-2 text-right text-emerald-600 font-extrabold">{comm.paid.toLocaleString('fr-FR')} €</td>
+                          <td className="py-3 px-2 text-right text-amber-700 font-extrabold">{comm.remaining.toLocaleString('fr-FR')} €</td>
+                          <td className="py-3 px-2 text-right">
+                            <div className="flex flex-col items-end gap-1">
+                              <span className="text-[10px] font-extrabold text-slate-500">{Math.round(collectRatio)}% recouvré</span>
+                              <div className="w-full bg-slate-100 rounded-full h-1.5 max-w-[120px] overflow-hidden">
+                                <div 
+                                  className="bg-emerald-500 h-1.5 rounded-full transition-all duration-500" 
+                                  style={{ width: `${Math.min(100, collectRatio)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="space-y-8 py-4 animate-fade-in flex-1">
+              {/* Chart 1: Bar Chart of Turnover (CA) */}
+              <div>
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Volume d'Affaires (CA) par Commercial</h4>
+                <div className="relative bg-slate-50/50 rounded-2xl border border-slate-150 p-6">
+                  {commercialPerformance.length === 0 ? (
+                    <p className="text-center text-xs text-slate-400 py-6">Aucune donnée</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {commercialPerformance.map((comm, idx) => {
+                        const maxVolume = Math.max(...commercialPerformance.map(c => c.volume), 1);
+                        const pct = (comm.volume / maxVolume) * 100;
+                        return (
+                          <div key={comm.name} className="space-y-1.5">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="font-extrabold text-slate-700 flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: `hsl(${idx * 45}, 70%, 55%)` }}></span>
+                                {comm.name}
+                              </span>
+                              <span className="font-black text-slate-900">{comm.volume.toLocaleString('fr-FR')} € <span className="text-slate-400 font-bold">({comm.salesCount} ventes)</span></span>
+                            </div>
+                            <div className="w-full bg-white border border-slate-150 h-6 rounded-lg overflow-hidden flex shadow-inner">
                               <div 
-                                className="bg-emerald-500 h-1.5 rounded-full transition-all duration-500" 
-                                style={{ width: `${Math.min(100, collectRatio)}%` }}
+                                className="h-full rounded-l-lg transition-all duration-75 bg-gradient-to-r"
+                                style={{ 
+                                  width: `${pct}%`,
+                                  backgroundImage: `linear-gradient(to right, hsl(${idx * 55}, 75%, 60%), hsl(${idx * 55}, 85%, 50%))`
+                                }}
                               />
                             </div>
                           </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Chart 2: Stacked Recovery & Outstanding Chart */}
+              <div>
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Suivi du Recouvrement (Encaissé vs Reste à Payer)</h4>
+                <div className="bg-slate-50/50 rounded-2xl border border-slate-150 p-6 space-y-5">
+                  {commercialPerformance.length === 0 ? (
+                    <p className="text-center text-xs text-slate-400 py-6">Aucune donnée</p>
+                  ) : (
+                    commercialPerformance.map((comm) => {
+                      const total = comm.volume || 1;
+                      const paidPct = (comm.paid / total) * 100;
+                      const remPct = (comm.remaining / total) * 100;
+                      return (
+                        <div key={comm.name} className="space-y-2">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="font-extrabold text-slate-800">{comm.name}</span>
+                            <div className="flex gap-3 text-[10px] font-bold">
+                              <span className="text-emerald-600">Encaissé: {comm.paid.toLocaleString('fr-FR')} € ({Math.round(paidPct)}%)</span>
+                              <span className="text-amber-700">Reste: {comm.remaining.toLocaleString('fr-FR')} € ({Math.round(remPct)}%)</span>
+                            </div>
+                          </div>
+                          {/* Stacked Progress Bar */}
+                          <div className="w-full h-4 bg-slate-200 rounded-full overflow-hidden flex shadow-sm">
+                            <div 
+                              className="h-full bg-emerald-500 hover:opacity-90 transition-all"
+                              style={{ width: `${paidPct}%` }}
+                              title={`Encaissé: ${comm.paid.toLocaleString('fr-FR')} €`}
+                            />
+                            <div 
+                              className="h-full bg-amber-500 hover:opacity-90 transition-all"
+                              style={{ width: `${remPct}%` }}
+                              title={`Reste à payer: ${comm.remaining.toLocaleString('fr-FR')} €`}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Financial Distribution (Payment Methods breakdown) */}
@@ -502,7 +604,7 @@ export const AdminPerformanceDashboard: React.FC = () => {
             <ShieldAlert size={18} className="text-amber-600" />
             Dossiers Non Soldés Prioritaires
           </h2>
-          <p className="text-slate-500 text-xs mt-0.5">Clients avec un reste à payer supérieur à zéro, triés par montant.</p>
+          <p className="text-slate-500 text-xs mt-0.5">Dossiers avec reste à payer supérieur à zéro depuis plus de 5 jours après achat.</p>
 
           <div className="mt-4 divide-y divide-slate-100 max-h-[280px] overflow-y-auto">
             {filteredSales.filter(s => {
@@ -510,17 +612,36 @@ export const AdminPerformanceDashboard: React.FC = () => {
               const salePayments = payments.filter(p => p.saleId === s.id);
               const paidAmount = salePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
               const remaining = Math.max(0, (Number(s.price) || 0) + (Number(s.transport) || 0) - paidAmount);
-              return remaining > 0;
+              
+              if (!s.date) return false;
+              const saleDate = new Date(s.date);
+              const today = new Date();
+              today.setHours(0,0,0,0);
+              saleDate.setHours(0,0,0,0);
+              const diffDays = Math.floor((today.getTime() - saleDate.getTime()) / (1000 * 60 * 60 * 24));
+              
+              return remaining > 0 && diffDays >= 5;
             }).map(s => {
               const salePayments = payments.filter(p => p.saleId === s.id);
               const paidAmount = salePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
               const remaining = Math.max(0, (Number(s.price) || 0) + (Number(s.transport) || 0) - paidAmount);
 
+              const saleDate = new Date(s.date || '');
+              const today = new Date();
+              today.setHours(0,0,0,0);
+              saleDate.setHours(0,0,0,0);
+              const diffDays = Math.floor((today.getTime() - saleDate.getTime()) / (1000 * 60 * 60 * 24));
+
               return (
                 <div key={s.id} className="py-3 flex items-center justify-between text-sm hover:bg-slate-50/50 px-2 rounded-lg transition-colors">
                   <div className="flex flex-col">
-                    <div className="font-bold text-slate-800">{s.clientName || 'Client Inconnu'}</div>
-                    <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
+                    <div className="font-bold text-slate-800 flex items-center gap-2">
+                      {s.clientName || 'Client Inconnu'}
+                      <span className="bg-red-50 text-red-700 text-[10px] font-black border border-red-200/60 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Clock size={10} /> En retard : J+{diffDays}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-1.5">
                       <span>BDC: #{s.bdcNumber}</span>
                       <span>•</span>
                       <span>{s.marque} {s.modele}</span>
@@ -544,7 +665,7 @@ export const AdminPerformanceDashboard: React.FC = () => {
                 </div>
               );
             }).length === 0 ? (
-              <div className="py-12 text-center text-slate-400 font-bold">Tous vos dossiers sont entièrement soldés ! 🎉</div>
+              <div className="py-12 text-center text-slate-400 font-bold">Aucun dossier en retard de paiement de plus de 5 jours ! 🎉</div>
             ) : null}
           </div>
         </div>
