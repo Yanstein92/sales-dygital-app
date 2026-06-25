@@ -55,7 +55,10 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
       transport: parseFloat(fd.get('transport') as string) || 0,
       date: fd.get('date') as string,
       commercial: fd.get('commercial') as string,
-      ref: (fd.get('ref') as string) || ''
+      ref: (fd.get('ref') as string) || '',
+      address: String(fd.get('address') || '').trim(),
+      zipCode: String(fd.get('zipCode') || '').trim(),
+      city: String(fd.get('city') || '').trim()
     };
 
     let targetId = draft.id;
@@ -177,6 +180,18 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1"><Hash size={12} className="text-blue-600"/> Référence</label>
                   <input type="text" name="ref" placeholder="Intermédiaire..." defaultValue={draft.ref} className="w-full p-2.5 border border-blue-300 bg-blue-50 focus:bg-white rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Adresse</label>
+                  <input type="text" name="address" placeholder="ex: 12 Rue de la Paix" defaultValue={draft.address || ''} className="w-full p-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-purple-500 outline-none text-sm font-medium" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Code Postal</label>
+                  <input type="text" name="zipCode" placeholder="ex: 75000" defaultValue={draft.zipCode || ''} className="w-full p-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-purple-500 outline-none text-sm font-medium" />
+                </div>
+                <div className="sm:col-span-3">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Ville</label>
+                  <input type="text" name="city" placeholder="ex: Paris" defaultValue={draft.city || ''} className="w-full p-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-purple-500 outline-none text-sm font-medium" />
                 </div>
               </div>
             </div>

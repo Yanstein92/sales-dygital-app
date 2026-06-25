@@ -57,13 +57,56 @@ const processPDFFile = async (
     let clientName = [...new Set(nameParts)].join(' ').replace(/[-_]$/, '').trim() || 'Client inconnu';
 
     // Direct Extraction of Email & Phone
-    const emailMatch = fullText.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
-    const email = emailMatch ? emailMatch[1].trim() : '';
+    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/gi;
+    const allEmails = fullText.match(emailRegex) || [];
+    let email = '';
+    if (allEmails.length > 0) {
+      // Filter out emails containing company names or generic role-based mailboxes
+      const companyKeywords = ['kdb', 'djcar', 'dj-car', 'contact@', 'sales@', 'admin@', 'direction@', 'facturation@', 'info@', 'commercial@', 'support@', 'noreply@', 'no-reply@', 'billing@', 'garage@'];
+      const clientEmails = allEmails.filter(e => {
+        const lowerEmail = e.toLowerCase();
+        return !companyKeywords.some(kw => lowerEmail.includes(kw));
+      });
+      // Fallback to the first available email if all of them are company emails
+      email = clientEmails.length > 0 ? clientEmails[0].trim() : allEmails[0].trim();
+    }
 
     const phoneRegex = /(?:tél|téléphone|port|portable|gsm|tel)\s*[:\s.-]*(\+?\d[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2})/i;
     const phoneRegexAlt = /(?:\D|^)(0[1-9](?:[\s.-]?\d{2}){4})(?:\D|$)/;
     const phoneMatch = fullText.match(phoneRegex) || fullText.match(phoneRegexAlt);
     const phone = phoneMatch ? phoneMatch[1].replace(/[^0-9+]/g, '').trim() : '';
+
+    // Extraction de l'adresse, du code postal et de la ville
+    const addressRegex = /(?:adresse|demeurant|résidant|domicilié)\s*[:\s]+([A-Za-z0-9À-ÿ\s,'.()-]{5,150})(?=\s*(?:tél|téléphone|port|portable|gsm|email|courriel|bon|le|date|n°|$))/i;
+    const addressMatch = fullText.match(addressRegex);
+    let address = addressMatch ? addressMatch[1].trim() : '';
+
+    let zipCode = '';
+    let city = '';
+
+    if (address) {
+      const zipInAddress = address.match(/\b(\d{5})\b/);
+      if (zipInAddress) {
+        zipCode = zipInAddress[1];
+        const zipIdx = address.indexOf(zipCode);
+        const beforeZip = address.substring(0, zipIdx).trim().replace(/,$/, '').trim();
+        const afterZip = address.substring(zipIdx + 5).trim();
+        const cityParts = afterZip.match(/^([A-Za-zÀ-ÿ\s-]+)/);
+        if (cityParts) {
+          city = cityParts[1].trim();
+        }
+        if (beforeZip.length > 3) {
+          address = beforeZip;
+        }
+      }
+    } else {
+      const fallbackZipRegex = /\b((?:0[1-9]|[1-8]\d|9[0-5]|97[1-8]|98[4-9])\d{3})\b\s*([A-ZÀ-ÿ][A-ZÀ-ÿa-zÀ-ÿ\s-]+)/;
+      const fallbackZipMatch = fullText.match(fallbackZipRegex);
+      if (fallbackZipMatch) {
+        zipCode = fallbackZipMatch[1];
+        city = fallbackZipMatch[2].trim().split(/\s{2,}/)[0];
+      }
+    }
 
     const marque = (fullText.match(/Marque[\s",:]+(?:Marque[\s",:]+)?([A-Z]+)/i) || [])[1]?.trim() || '';
     const modele = (fullText.match(/Modèle[\s",:]+(?:Modèle[\s",:]+)?([A-Z\s0-9.-]+?)(?=\s*Version|\s*M\.E\.C|\s*Km|\s*Couleur|")/i) || [])[1]?.trim() || '';
@@ -130,6 +173,9 @@ const processPDFFile = async (
       phone: phone || (existingSale ? (existingSale.phone || '') : ''), 
       email: email || (existingSale ? (existingSale.email || '') : ''), 
       ref: existingSale ? (existingSale.ref || '') : '', 
+      address: address || (existingSale ? ((existingSale as any).address || '') : ''),
+      zipCode: zipCode || (existingSale ? ((existingSale as any).zipCode || '') : ''),
+      city: city || (existingSale ? ((existingSale as any).city || '') : ''),
       draftPayments: extractedAcomptes
     });
     setCurrentView('pdf_validation');
@@ -758,7 +804,7 @@ const MainAppContent: React.FC = () => {
                   onSelectSale={(id) => window.location.hash = `detail/${id}`} 
                   onProcessPdf={(f) => processPDFFile(f, sales, setDraftExtraction, (view) => window.location.hash = view, showToast, setIsLoading)}
                   onManualEntry={() => {
-                    setDraftExtraction({ isManual: true, bdcNumber: '', company: 'KDB AUTO', clientName: '', marque: '', modele: '', color: '', vin: '', plaque: '', mec: '', price: '', date: new Date().toISOString().split('T')[0], commercial: 'À assigner', phone: '', email: '', ref: '', draftPayments: [] });
+                    setDraftExtraction({ isManual: true, bdcNumber: '', company: 'KDB AUTO', clientName: '', marque: '', modele: '', color: '', vin: '', plaque: '', mec: '', price: '', date: new Date().toISOString().split('T')[0], commercial: 'À assigner', phone: '', email: '', ref: '', address: '', zipCode: '', city: '', draftPayments: [] });
                     window.location.hash = 'pdf_validation';
                   }}
                 />

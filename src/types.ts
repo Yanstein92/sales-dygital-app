@@ -44,6 +44,11 @@ export interface Sale {
   refundDate?: string;
   refundMethod?: string;
   refundDetails?: string;
+
+  // Adresse et localisation
+  address?: string;
+  zipCode?: string;
+  city?: string;
 }
 
 export interface UserProfile {

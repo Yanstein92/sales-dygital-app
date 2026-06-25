@@ -45,11 +45,29 @@ export const Login: React.FC<LoginProps> = ({ onShowToast }) => {
         onShowToast("Connexion réussie !", "success");
       }
     } catch (err: any) {
+      console.error("Login detail err:", err);
       if (isRegistering) {
-        setAuthError(err.code === 'auth/email-already-in-use' ? 'Cet email est déjà utilisé.' : "Erreur lors de la création du compte.");
+        if (err.code === 'auth/email-already-in-use') {
+          setAuthError('Cet email est déjà utilisé.');
+        } else if (err.code === 'auth/weak-password') {
+          setAuthError('Le mot de passe doit contenir au moins 6 caractères.');
+        } else if (err.code === 'auth/invalid-email') {
+          setAuthError("L'adresse email n'est pas valide.");
+        } else {
+          setAuthError("Erreur lors de la création du compte. Veuillez réessayer.");
+        }
       } else {
-        console.error("Login detail err:", err);
-        setAuthError(`Erreur: ${err.message || "Email ou mot de passe incorrect."}`);
+        if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+          setAuthError('Email ou mot de passe incorrect.');
+        } else if (err.code === 'auth/invalid-email') {
+          setAuthError("Format de l'adresse email incorrect.");
+        } else if (err.code === 'auth/too-many-requests') {
+          setAuthError('Trop de tentatives de connexion échouées. Veuillez réessayer plus tard.');
+        } else if (err.code === 'auth/user-disabled') {
+          setAuthError('Ce compte utilisateur a été désactivé.');
+        } else {
+          setAuthError("Email ou mot de passe incorrect.");
+        }
       }
     } finally {
       setIsLoading(false);
