@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
-import { auth, db, getUserPath, getUserDocPath, onAuthStateChanged, collection, onSnapshot, signInWithCustomToken, doc, getDoc, setDoc, query, where, limit, getDocs, or } from './firebase';
+import { auth, db, getUserPath, getUserDocPath, onAuthStateChanged, collection, onSnapshot, signInWithCustomToken, doc, getDoc, setDoc, query, where, limit, getDocs, or, OperationType, handleFirestoreError } from './firebase';
 import { Sale, Payment, UserProfile } from '../types';
 
 interface AppContextType {
@@ -81,7 +81,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const fetchProfileAndData = async () => {
       try {
         const profileRef = doc(db, getUserDocPath(userAuth.uid));
-        const profileSnap = await getDoc(profileRef);
+        let profileSnap;
+        try {
+          profileSnap = await getDoc(profileRef);
+        } catch (err) {
+          handleFirestoreError(err, OperationType.GET, getUserDocPath(userAuth.uid));
+          throw err;
+        }
         
         let profile: UserProfile;
         if (profileSnap.exists() && profileSnap.data()?.role) {
@@ -101,7 +107,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
           // Try to auto-save to ensure consistency in db if it was missing
           if (!profileSnap.exists() || !profileSnap.data()?.role) {
-            try { setDoc(profileRef, profile, { merge: true }); } catch (e) {}
+            try { 
+              await setDoc(profileRef, profile, { merge: true }); 
+            } catch (e) {
+              handleFirestoreError(e, OperationType.WRITE, getUserDocPath(userAuth.uid));
+            }
           }
         }
         setUserProfile(profile);
@@ -119,6 +129,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
             } catch (e) {
               console.error("Error finding admin:", e);
+              handleFirestoreError(e, OperationType.LIST, 'users');
             }
           }
         }
@@ -137,10 +148,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }, (error) => {
           setAuthError("Permissions ou connexion refusée.");
           setIsDbLoading(false);
+          handleFirestoreError(error, OperationType.LIST, pathSales);
         });
 
         const unsubPayments = onSnapshot(collection(db, pathPayments), (snapshot) => {
           setPayments(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Payment)));
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, pathPayments);
         });
 
         return () => { unsubSales(); unsubPayments(); };

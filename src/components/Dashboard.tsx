@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { 
   User, Building2, Banknote, Search, UploadCloud, Plus, X, 
   ArrowUpDown, ChevronUp, ChevronDown, Clock, CheckCircle2, 
-  Car, MessageCircle, Mail, Hash, CreditCard
+  Car, MessageCircle, Mail, Hash, CreditCard, ChevronRight
 } from 'lucide-react';
 import { db, doc, setDoc, getUserPath } from '../lib/firebase';
 import { useApp } from '../lib/context';
@@ -19,12 +19,12 @@ export const Dashboard: React.FC<{
   const [filterCommercial, setFilterCommercial] = useState('Tous');
   const [filterStatus, setFilterStatus] = useState('Tous'); 
   const [filterCompany, setFilterCompany] = useState('Toutes');
-  const [filterReleaseStatus, setFilterReleaseStatus] = useState('Tous'); // Release statuses: 'Tous', 'Non sorti', 'Programmé', 'Sorti', 'Sorti TPD'
+  const [filterReleaseStatus, setFilterReleaseStatus] = useState('Non sorti'); // Release statuses: 'Tous', 'Non sorti', 'Programmé', 'Sorti', 'Sorti TPD'
   const [filterFacture, setFilterFacture] = useState('Tous'); // 'Tous', 'Facturé', 'Non facturé', 'Remboursé'
   const [showFilters, setShowFilters] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'asc' });
+  const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
   const [isDragging, setIsDragging] = useState(false);
 
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -112,7 +112,20 @@ export const Dashboard: React.FC<{
     return true;
   });
 
-  processedSales.sort((a, b) => {
+  // Split into active (remaining > 0 and not refunded) and settled (paid or refunded) so settled ones are always at the bottom
+  const activeSales = processedSales.filter(s => {
+    const remaining = calculateRemaining(s.id);
+    const isRefunded = s.factureStatus === 'rembourse';
+    return remaining > 0 && !isRefunded;
+  });
+
+  const settledSales = processedSales.filter(s => {
+    const remaining = calculateRemaining(s.id);
+    const isRefunded = s.factureStatus === 'rembourse';
+    return remaining <= 0 || isRefunded;
+  });
+
+  const sortFunction = (a: Sale, b: Sale) => {
     let valA, valB;
     
     switch (sortConfig.key) {
@@ -132,11 +145,23 @@ export const Dashboard: React.FC<{
     if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
     if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
     return 0;
-  });
+  };
+
+  activeSales.sort(sortFunction);
+  settledSales.sort(sortFunction);
+
+  const finalProcessedSales = [...activeSales, ...settledSales];
 
   const handleSort = (key: string) => {
     let direction = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+    if (sortConfig.key === key) {
+      direction = sortConfig.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+      // For date and reste, default to descending to show newest/highest remaining first
+      if (key === 'date' || key === 'reste') {
+        direction = 'desc';
+      }
+    }
     setSortConfig({ key, direction });
   };
 
@@ -283,19 +308,22 @@ export const Dashboard: React.FC<{
                 <th className="px-5 py-4 text-right cursor-pointer hover:bg-slate-100 transition-colors group select-none" onClick={() => handleSort('reste')}>
                   <div className="flex items-center justify-end gap-2"><SortIcon columnKey="reste" /> Reste à payer</div>
                 </th>
-                <th className="px-5 py-4 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {processedSales.map((sale) => {
+              {finalProcessedSales.map((sale) => {
                 const remaining = calculateRemaining(sale.id);
                 const isPaid = remaining <= 0;
+                const isRefunded = sale.factureStatus === 'rembourse';
+                const isSettled = isPaid || isRefunded;
                 const daysDiff = getDaysInfo(sale.date);
                 const isOverdue = !isPaid && daysDiff < 0;
                 
                 // Color based on status
                 let rowClass = 'hover:bg-slate-50';
-                if (sale.releaseStatus === 'sorti' || sale.releaseStatus === 'sorti_tpd') {
+                if (isRefunded) {
+                   rowClass = 'bg-slate-100/40 opacity-55 text-slate-400 select-none';
+                } else if (sale.releaseStatus === 'sorti' || sale.releaseStatus === 'sorti_tpd') {
                    rowClass = 'bg-slate-50 opacity-80 hover:opacity-100';
                 } else if (isOverdue) {
                    rowClass = 'bg-red-50 hover:bg-red-100';
@@ -305,7 +333,7 @@ export const Dashboard: React.FC<{
                   <tr 
                     key={sale.id} 
                     onClick={() => onSelectSale(sale.id)} 
-                    className={`${rowClass} transition-colors cursor-pointer hover:shadow-inner`}
+                    className={`${rowClass} transition-colors cursor-pointer hover:shadow-inner group/row`}
                   >
                     <td className="px-5 py-4 align-top w-24">
                       <div className="font-mono font-black text-slate-800 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md inline-block shadow-sm">#{sale.bdcNumber}</div>
@@ -315,7 +343,7 @@ export const Dashboard: React.FC<{
                     </td>
                     <td className="px-5 py-4 align-top w-64">
                       <div className="font-black text-slate-800 text-base flex items-center relative group">
-                        {sale.clientName}
+                        <span className={isRefunded ? 'line-through text-slate-400' : ''} onClick={(e) => e.stopPropagation()}>{sale.clientName}</span>
                         {sale.notes && sale.notes.length > 0 && (
                           <div className="relative ml-2 flex items-center justify-center">
                             <span className="bg-amber-400 text-amber-900 text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shadow-sm" title={`${sale.notes.length} note(s)`}>
@@ -327,7 +355,7 @@ export const Dashboard: React.FC<{
                               {sale.notes.map((n, i) => (
                                 <div key={n.id || `note-${i}`} className="mb-2 last:mb-0">
                                   <span className="text-[10px] text-amber-300 block">{new Date(n.date).toLocaleDateString()}</span>
-                                  <span className="break-words">{n.text}</span>
+                                  <span className="break-words text-white">{n.text}</span>
                                 </div>
                               ))}
                               <div className="absolute top-full left-3 w-3 h-3 bg-slate-800 transform rotate-45 -mt-1.5"></div>
@@ -335,8 +363,8 @@ export const Dashboard: React.FC<{
                           </div>
                         )}
                       </div>
-                      {sale.ref && <div className="text-xs font-bold text-slate-500 mt-0.5 flex items-center"><Hash size={10} className="mr-0.5 text-indigo-500"/> Réf: {sale.ref}</div>}
-                      <div className="flex items-center gap-2 mt-2 flex-wrap">
+                      {sale.ref && <div className="text-xs font-bold text-slate-500 mt-0.5 flex items-center" onClick={(e) => e.stopPropagation()}><Hash size={10} className="mr-0.5 text-indigo-500"/> Réf: {sale.ref}</div>}
+                      <div className="flex items-center gap-2 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
                         <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${sale.commercial === 'À assigner' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600 border border-slate-200 shadow-sm'}`}>
                           {sale.commercial}
                         </span>
@@ -358,14 +386,14 @@ export const Dashboard: React.FC<{
                       </div>
                     </td>
                     <td className="px-5 py-4 align-top w-80">
-                      <div className="font-bold text-slate-800 text-base">{sale.marque} {sale.modele} <span className="text-sm font-medium text-slate-500">({sale.color})</span></div>
+                      <div className={`font-bold text-slate-800 text-base ${isRefunded ? 'text-slate-400 font-normal' : ''}`} onClick={(e) => e.stopPropagation()}>{sale.marque} {sale.modele} <span className="text-sm font-medium text-slate-500">({sale.color})</span></div>
                       <div className="mt-2 flex flex-col gap-1.5 items-start">
-                        <span className="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 flex items-center gap-1 shadow-sm"><Car size={12}/> {sale.plaque || '-'}</span>
+                        <span className="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 flex items-center gap-1 shadow-sm" onClick={(e) => e.stopPropagation()}><Car size={12}/> {sale.plaque || '-'}</span>
                         <div className="flex items-center gap-2">
-                           <span className="text-[11px] text-slate-500 font-mono bg-white px-2 py-0.5 rounded-md border border-slate-200 break-all leading-tight shadow-sm">
+                           <span className="text-[11px] text-slate-500 font-mono bg-white px-2 py-0.5 rounded-md border border-slate-200 break-all leading-tight shadow-sm" onClick={(e) => e.stopPropagation()}>
                              {sale.vin || '-'}
                            </span>
-                           <div className="relative group/status flex-shrink-0">
+                           <div className="relative group/status flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                              <span className={`cursor-pointer inline-flex items-center text-[10px] font-bold uppercase px-2 py-0.5 rounded-md border shadow-sm transition-colors ${
                                !sale.releaseStatus || sale.releaseStatus === 'non_sorti' ? 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100' : 
                                sale.releaseStatus === 'programmee' ? 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100' : 
@@ -390,18 +418,20 @@ export const Dashboard: React.FC<{
                           {isPaid ? <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1"><CheckCircle2 size={14} className="text-emerald-500"/> Soldé</span> : isOverdue ? <span className="text-[11px] font-black text-red-700 flex items-center gap-1 bg-red-100 border border-red-200 px-2 py-1 rounded-md shadow-sm"><Clock size={12}/> Retard {Math.abs(daysDiff)}j</span> : <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-md shadow-sm flex items-center gap-1"><Clock size={12}/> {daysDiff} jour(s) rest.</span>}
                         </div>
                     </td>
-                    <td className="px-5 py-4 text-right align-top w-36">
-                      <span className={`px-4 py-2 rounded-xl text-sm font-black shadow-sm inline-block min-w-[100px] text-center whitespace-nowrap border ${isPaid ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : isOverdue ? 'bg-red-500 border-red-600 text-white shadow-md shadow-red-500/20' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>{remaining.toLocaleString()} €</span>
-                    </td>
-                    <td className="px-5 py-4 text-center align-top w-20">
-                      <button onClick={(e) => { e.stopPropagation(); onSelectSale(sale.id); }} className="text-indigo-600 hover:text-white p-2.5 rounded-xl hover:bg-indigo-600 transition-all border border-slate-200 hover:border-indigo-600 shadow-sm bg-white hover:shadow-md"><CreditCard size={18} /></button>
+                    <td className="px-5 py-4 text-right align-top w-44">
+                      <div className="flex items-center justify-end gap-3">
+                        <span className={`px-4 py-2 rounded-xl text-sm font-black shadow-sm inline-block min-w-[100px] text-center whitespace-nowrap border ${isPaid ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : isOverdue ? 'bg-red-500 border-red-600 text-white shadow-md shadow-red-500/20' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>{remaining.toLocaleString()} €</span>
+                        <div className="text-slate-400 group-hover/row:text-indigo-600 group-hover/row:translate-x-1 transition-all duration-200">
+                          <ChevronRight size={20} />
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 );
               })}
-              {processedSales.length === 0 && (
+              {finalProcessedSales.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center py-16 cursor-default">
+                  <td colSpan={5} className="text-center py-16 cursor-default">
                     <div className="text-slate-400 mb-2"><Search size={40} className="mx-auto opacity-50" /></div>
                     <p className="text-slate-500 font-bold text-lg">Aucun dossier trouvé.</p>
                   </td>

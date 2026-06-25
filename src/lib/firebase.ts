@@ -9,6 +9,7 @@ import {
   setPersistence,
   browserLocalPersistence,
   browserSessionPersistence,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import {
   getFirestore,
@@ -51,10 +52,68 @@ const firebaseConfig = {
 const isCanvasEnvironment = typeof (window as any).__firebase_config !== 'undefined' && (window as any).__firebase_config !== "";
 const appId = typeof (window as any).__app_id !== 'undefined' ? (window as any).__app_id : 'kdb-export-app';
 
-// Always use the real firebase config provided above, but we still handle canvas pathing 
-const app = initializeApp(firebaseConfig);
+let finalFirebaseConfig = firebaseConfig;
+if (isCanvasEnvironment) {
+  try {
+    const canvasConfig = (window as any).__firebase_config;
+    if (canvasConfig) {
+      finalFirebaseConfig = typeof canvasConfig === 'string' ? JSON.parse(canvasConfig) : canvasConfig;
+    }
+  } catch (e) {
+    console.error("Error parsing canvas firebase config, using fallback", e);
+  }
+}
+
+const app = initializeApp(finalFirebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 // Data structure paths: For now we retain the existing logic to not break active data, 
 // but we prepare for companies architecture via context.
@@ -81,6 +140,7 @@ export {
   setPersistence,
   browserLocalPersistence,
   browserSessionPersistence,
+  sendPasswordResetEmail,
   collection,
   onSnapshot,
   doc,

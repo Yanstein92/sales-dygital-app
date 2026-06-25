@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db, doc, setDoc, getUserDocPath, collectionGroup, getDocs } from '../lib/firebase';
 import { useApp } from '../lib/context';
 import { UserProfile, Sale } from '../types';
-import { ShieldAlert, Users, Building, Activity, ShieldCheck, Search, Loader2, Trash, Settings, LogOut, ChevronRight, Edit2, Mail, CreditCard, LayoutDashboard, CheckSquare, Download } from 'lucide-react';
+import { ShieldAlert, Users, Building, Activity, ShieldCheck, Search, Loader2, Trash, Settings, LogOut, ChevronRight, Edit2, Mail, CreditCard, LayoutDashboard, CheckSquare, Download, KeyRound } from 'lucide-react';
 
 export const SuperAdmin: React.FC<{
   onClose: () => void;
@@ -496,7 +496,7 @@ export const SuperAdmin: React.FC<{
                                      </td>
                                      <td className="px-6 py-4">
                                         <button 
-                                          onClick={() => handleDeleteUser(user.uid)} 
+                                          onClick={() => {}} className="hidden" /> <button onClick={async () => { const newPass = window.prompt(`Saisir le nouveau mot de passe pour ${user.name || user.email} (Min 6 caractères) :`); if (newPass) { if (newPass.length < 6) { alert("Le mot de passe doit comporter au moins 6 caractères."); return; } try { const response = await fetch(`/api/users/${user.uid}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: newPass }) }); if (response.ok) { onShowToast("Mot de passe modifié avec succès.", "success"); } else { const err = await response.json(); alert(`Erreur : ${err.error || "Mise à jour échouée."}`); } } catch (e) { alert("Erreur réseau"); } } }} className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors cursor-pointer mr-2 inline-flex items-center gap-1 text-xs font-bold"><KeyRound size={14} /> Password</button><button onClick={() => handleDeleteUser(user.uid)} 
                                           className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors cursor-pointer"
                                         >
                                           <Trash size={16} />

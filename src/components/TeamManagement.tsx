@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Shield, ShieldAlert, CheckCircle2, ShieldCheck, X, Plus, Loader2, Mail, Lock, UserPlus } from 'lucide-react';
+import { User, Shield, ShieldAlert, CheckCircle2, ShieldCheck, X, Plus, Loader2, Mail, Lock, UserPlus, KeyRound } from 'lucide-react';
 import { db, collection, query, where, getDocs, updateDoc, doc, setDoc, getUserDocPath } from '../lib/firebase';
 import { useApp } from '../lib/context';
 import { UserProfile } from '../types';
@@ -188,6 +188,36 @@ export const TeamManagement: React.FC<{ onClose: () => void, onShowToast: (m: st
                       {m.role === 'admin' ? <ShieldCheck size={12} /> : <User size={12} />} 
                       {m.role}
                     </span>
+                    <button 
+                      onClick={async () => {
+                        const newPass = window.prompt(`Saisir le nouveau mot de passe pour ${m.name} (Min 6 caractères) :`);
+                        if (newPass) {
+                          if (newPass.length < 6) {
+                            alert("Le mot de passe doit comporter au moins 6 caractères.");
+                            return;
+                          }
+                          try {
+                            const response = await fetch(`/api/users/${m.uid}`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ password: newPass })
+                            });
+                            if (response.ok) {
+                              onShowToast("Mot de passe modifié avec succès.", "success");
+                            } else {
+                              const err = await response.json();
+                              onShowToast(err.error || "Mise à jour échouée.", "error");
+                            }
+                          } catch (e) {
+                            onShowToast("Erreur réseau.", "error");
+                          }
+                        }
+                      }}
+                      className="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white p-1.5 rounded-lg transition-colors flex items-center justify-center gap-1"
+                      title="Changer le mot de passe"
+                    >
+                      <KeyRound size={16} />
+                    </button>
                     <button 
                       onClick={() => toggleRole(m)}
                       disabled={m.uid === userProfile.uid}

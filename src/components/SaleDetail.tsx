@@ -16,7 +16,7 @@ interface Props {
 }
 
 export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShowToast }) => {
-  const { sales, payments, userAuth } = useApp();
+  const { sales, payments, userAuth, userProfile, databaseUid } = useApp();
   const [noteInput, setNoteInput] = useState('');
   const [showApptPopup, setShowApptPopup] = useState(false);
   const [apptForm, setApptForm] = useState({ date: '', time: '10:00' });
@@ -34,7 +34,7 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
 
   const handleUpdateField = async (fieldsToUpdate: Partial<Sale>) => {
     try {
-      await setDoc(doc(db, getUserPath('sales', userAuth.uid), sale.id), fieldsToUpdate, { merge: true });
+      await setDoc(doc(db, getUserPath('sales', databaseUid), sale.id), fieldsToUpdate, { merge: true });
       onShowToast("Dossier mis à jour.", "success");
     } catch (err) {
       onShowToast("Erreur lors de la mise à jour.", "error");
@@ -69,7 +69,7 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
     const fd = new FormData(e.currentTarget);
     const payId = Date.now().toString();
     try {
-      await setDoc(doc(db, getUserPath('payments', userAuth.uid), payId), { 
+      await setDoc(doc(db, getUserPath('payments', databaseUid), payId), { 
         id: payId, 
         saleId: saleId, 
         type: fd.get('type'), 
@@ -77,7 +77,7 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
         date: fd.get('date'), 
         encaissementDate: fd.get('encaissementDate'),
         amount: parseFloat(fd.get('amount') as string),
-        // we can add a date d'encaissement optionally as same date here
+        addedBy: userProfile?.name || userProfile?.email || userAuth?.email || 'Inconnu'
       });
       onShowToast("Paiement encaissé !");
       e.currentTarget.reset();
@@ -89,9 +89,9 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
   const handleDeleteSaleConfirm = async () => {
     try {
       for (const p of salePayments) {
-        await deleteDoc(doc(db, getUserPath('payments', userAuth.uid), p.id));
+        await deleteDoc(doc(db, getUserPath('payments', databaseUid), p.id));
       }
-      await deleteDoc(doc(db, getUserPath('sales', userAuth.uid), saleId));
+      await deleteDoc(doc(db, getUserPath('sales', databaseUid), saleId));
       onShowToast("Dossier supprimé avec succès.", "success");
       onBack();
     } catch (err) {
@@ -123,7 +123,7 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
 
     const handleEdit = async () => {
       try {
-        await setDoc(doc(db, getUserPath('payments', userAuth.uid), p.id), editData, { merge: true });
+        await setDoc(doc(db, getUserPath('payments', databaseUid), p.id), editData, { merge: true });
         setIsEditing(false);
         onShowToast("Paiement modifié", "success");
       } catch (err) { onShowToast("Erreur", "error"); }
@@ -131,7 +131,13 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
 
     const handleDelete = async () => {
       if (window.confirm("Supprimer ce paiement ?")) {
-        await deleteDoc(doc(db, getUserPath('payments', userAuth.uid), p.id));
+        try {
+          await deleteDoc(doc(db, getUserPath('payments', databaseUid), p.id));
+          onShowToast("Paiement supprimé", "success");
+        } catch (err: any) {
+          console.error("Delete payment error:", err);
+          onShowToast(`Erreur de suppression: ${err.message || err}`, "error");
+        }
       }
     }
 
@@ -145,7 +151,7 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
               </select>
               <input type="text" value={editData.payer} onChange={(e) => setEditData({...editData, payer: e.target.value})} className="p-2 border border-blue-300 rounded-md text-sm w-full sm:flex-1 outline-none" placeholder="Payeur" />
               <input type="date" value={editData.date} onChange={(e) => setEditData({...editData, date: e.target.value})} title="Date émission" className="p-2 border border-blue-300 rounded-md text-sm w-full sm:w-32 outline-none" />
-              <input type="date" value={editData.encaissementDate || editData.date} onChange={(e) => setEditData({...editData, encaissementDate: e.target.value})} title="Date encaissement" className="p-2 border border-blue-300 rounded-md text-sm w-full sm:w-32 outline-none" />
+              <input type="date" value={editData.encaissementDate || ''} onChange={(e) => setEditData({...editData, encaissementDate: e.target.value})} title="Date encaissement" className="p-2 border border-blue-300 rounded-md text-sm w-full sm:w-32 outline-none" />
               <input type="number" value={editData.amount} onChange={(e) => setEditData({...editData, amount: parseFloat(e.target.value) || 0})} className="p-2 border-2 border-blue-400 rounded-md text-base w-full sm:w-32 text-right font-black outline-none" step="0.01" />
               <div className="flex gap-1 w-full sm:w-auto justify-end">
                 <button onClick={handleEdit} className="bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700"><CheckCircle2 size={18}/></button>
@@ -159,14 +165,17 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
     return (
       <tr className="hover:bg-slate-50 border-b border-slate-100 group">
         <td className="px-5 py-4"><span className="bg-slate-100 text-slate-700 px-3 py-1.5 rounded-md text-xs font-black border border-slate-200">{p.type}</span></td>
-        <td className="px-5 py-4 text-slate-800 font-medium text-base">{p.payer}</td>
+        <td className="px-5 py-4 text-slate-800 font-medium text-base">
+          <div>{p.payer}</div>
+          {p.addedBy && <div className="text-[10px] text-slate-400 font-normal italic mt-0.5">Par {p.addedBy}</div>}
+        </td>
         <td className="px-5 py-4 text-slate-500 font-medium text-sm">{new Date(p.date).toLocaleDateString('fr-FR')}</td>
-        <td className="px-5 py-4 text-slate-700 font-bold text-sm bg-green-50/50">{p.encaissementDate ? new Date(p.encaissementDate).toLocaleDateString('fr-FR') : new Date(p.date).toLocaleDateString('fr-FR')}</td>
+        <td className="px-5 py-4 text-slate-700 font-bold text-sm bg-green-50/50">{p.encaissementDate ? new Date(p.encaissementDate).toLocaleDateString('fr-FR') : <span className="text-slate-400 font-normal italic">En attente</span>}</td>
         <td className="px-5 py-4 text-right font-black text-slate-800 text-lg whitespace-nowrap">{Number(p.amount).toLocaleString()} €</td>
         <td className="px-5 py-4 text-center">
-          <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button onClick={() => setIsEditing(true)} className="text-blue-500 hover:text-blue-700 p-1.5 bg-blue-50 rounded-md"><Edit2 size={16} /></button>
-            <button onClick={handleDelete} className="text-red-500 hover:text-red-700 p-1.5 bg-red-50 rounded-md"><Trash2 size={16} /></button>
+          <div className="flex justify-center gap-2">
+            <button onClick={() => setIsEditing(true)} className="text-blue-500 hover:text-blue-700 p-1.5 bg-blue-50 rounded-md transition-all hover:scale-105"><Edit2 size={16} /></button>
+            <button onClick={handleDelete} className="text-red-500 hover:text-red-700 p-1.5 bg-red-50 rounded-md transition-all hover:scale-105"><Trash2 size={16} /></button>
           </div>
         </td>
       </tr>
@@ -422,7 +431,7 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
                       </div>
                       <div className="flex flex-col gap-1 w-full sm:w-auto">
                         <label className="text-[10px] uppercase font-bold text-slate-500">Date Encaissement</label>
-                        <input type="date" name="encaissementDate" className="p-2.5 border border-emerald-300 rounded-md text-sm outline-none focus:ring-2 focus:ring-emerald-500" defaultValue={new Date().toISOString().split('T')[0]} required />
+                        <input type="date" name="encaissementDate" className="p-2.5 border border-emerald-300 rounded-md text-sm outline-none focus:ring-2 focus:ring-emerald-500" />
                       </div>
 
                       <div className="flex flex-col gap-1 w-full sm:w-auto">

@@ -12,6 +12,7 @@ export interface Payment {
   date: string; // Used as Date de Virement / Emission
   encaissementDate?: string; // Date d'encaissement effective
   amount: number;
+  addedBy?: string; // Nom de l'utilisateur qui l'a ajouté
 }
 
 export interface Sale {

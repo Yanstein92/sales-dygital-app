@@ -65,8 +65,16 @@ async function startServer() {
     try {
       if (!getApps().length) return res.status(500).json({ error: "Firebase Admin n'est pas configuré." });
       const { uid } = req.params;
-      const data = req.body;
-      await getFirestore().collection('users').doc(uid).update(data);
+      const { password, ...firestoreData } = req.body;
+
+      if (password) {
+        await getAuth().updateUser(uid, { password });
+      }
+
+      if (Object.keys(firestoreData).length > 0) {
+        await getFirestore().collection('users').doc(uid).update(firestoreData);
+      }
+
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });

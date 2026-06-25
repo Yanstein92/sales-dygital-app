@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, Lock, Loader2, AlertTriangle, Info, X, Send, Building, UserPlus } from 'lucide-react';
-import { auth, signInWithEmailAndPassword, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence, db, setDoc, doc, getUserDocPath } from '../lib/firebase';
+import { auth, signInWithEmailAndPassword, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence, db, setDoc, doc, getUserDocPath, sendPasswordResetEmail } from '../lib/firebase';
 import { CustomLogo } from './CustomLogo';
 
 interface LoginProps {
@@ -51,6 +51,23 @@ export const Login: React.FC<LoginProps> = ({ onShowToast }) => {
         console.error("Login detail err:", err);
         setAuthError(`Erreur: ${err.message || "Email ou mot de passe incorrect."}`);
       }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!emailInput.trim()) {
+      onShowToast("Veuillez saisir votre adresse email d'abord.", "error");
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, emailInput.trim());
+      onShowToast(`Email de réinitialisation envoyé à ${emailInput} !`, "success");
+    } catch (err: any) {
+      console.error(err);
+      onShowToast(`Erreur : ${err.message || "Vérifiez l'adresse email."}`, "error");
     } finally {
       setIsLoading(false);
     }
@@ -226,6 +243,13 @@ export const Login: React.FC<LoginProps> = ({ onShowToast }) => {
                 />
                 Se souvenir de moi
               </label>
+              <button 
+                type="button" 
+                onClick={handleForgotPassword}
+                className="text-xs font-bold text-blue-400 hover:text-blue-300 hover:underline transition-colors"
+              >
+                Mot de passe oublié ?
+              </button>
             </div>
           )}
 
