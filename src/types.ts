@@ -27,6 +27,7 @@ export interface Sale {
   color: string;
   vin: string;
   plaque: string;
+  mec?: string;
   price: number;
   transport?: number;
   date: string;

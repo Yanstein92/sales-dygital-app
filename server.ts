@@ -20,9 +20,11 @@ async function startServer() {
       initializeApp({
         credential: cert(serviceAccount)
       });
-      console.log("Firebase Admin Initialized Successfully");
+      console.log("Firebase Admin Initialized Successfully with service account");
     } else {
-      console.warn("⚠️ FIREBASE_SERVICE_ACCOUNT environment variable is missing. Setup Firebase Admin SDK in standard settings if needed.");
+      // Try to initialize using ADC (Application Default Credentials)
+      initializeApp();
+      console.log("Firebase Admin Initialized Successfully using Application Default Credentials");
     }
   } catch (error) {
     console.error("Error initializing Firebase Admin:", error);
@@ -30,6 +32,20 @@ async function startServer() {
 
   // --- API Routes ---
   
+  app.get("/api/sales", async (req, res) => {
+    try {
+      if (!getApps().length) return res.status(500).json({ error: "Firebase Admin n'est pas configuré." });
+      const snap = await getFirestore().collectionGroup('sales').get();
+      const sales: any[] = [];
+      snap.forEach(doc => {
+        sales.push({ id: doc.id, refPath: doc.ref.path, ...doc.data() });
+      });
+      res.json(sales);
+    } catch (e: any) {
+      console.error("Error fetching all sales in admin:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
   app.get("/api/users", async (req, res) => {
     try {
       if (!getApps().length) return res.status(500).json({ error: "Firebase Admin n'est pas configuré." });

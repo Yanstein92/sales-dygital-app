@@ -388,7 +388,14 @@ export const Dashboard: React.FC<{
                     <td className="px-5 py-4 align-top w-80">
                       <div className={`font-bold text-slate-800 text-base ${isRefunded ? 'text-slate-400 font-normal' : ''}`} onClick={(e) => e.stopPropagation()}>{sale.marque} {sale.modele} <span className="text-sm font-medium text-slate-500">({sale.color})</span></div>
                       <div className="mt-2 flex flex-col gap-1.5 items-start">
-                        <span className="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 flex items-center gap-1 shadow-sm" onClick={(e) => e.stopPropagation()}><Car size={12}/> {sale.plaque || '-'}</span>
+                        <div className="flex flex-wrap gap-1.5 items-center">
+                          <span className="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 flex items-center gap-1 shadow-sm" onClick={(e) => e.stopPropagation()}><Car size={12}/> {sale.plaque || '-'}</span>
+                          {(sale as any).mec && (
+                            <span className="text-[11px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md flex items-center shadow-sm" onClick={(e) => e.stopPropagation()}>
+                              M.E.C : {(sale as any).mec}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2">
                            <span className="text-[11px] text-slate-500 font-mono bg-white px-2 py-0.5 rounded-md border border-slate-200 break-all leading-tight shadow-sm" onClick={(e) => e.stopPropagation()}>
                              {sale.vin || '-'}

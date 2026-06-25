@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, CheckCircle2, LogOut, Users, Edit2, Check, KeyRound, LayoutDashboard, Car, ShieldCheck, Activity, Menu, X, Trash2 } from 'lucide-react';
+import { Loader2, CheckCircle2, LogOut, Users, Edit2, Check, KeyRound, LayoutDashboard, Car, ShieldCheck, Activity, Menu, X, Trash2, TrendingUp } from 'lucide-react';
 import { AppProvider, useApp } from './lib/context';
 import { auth, signOut, db, doc, setDoc, getUserDocPath } from './lib/firebase';
 import { CustomLogo } from './components/CustomLogo';
@@ -9,6 +9,8 @@ import { SaleDetail } from './components/SaleDetail';
 import { PdfValidation } from './components/PdfValidation';
 import { TeamManagement } from './components/TeamManagement';
 import { SuperAdmin } from './components/SuperAdmin';
+import { CompanyManagement } from './components/CompanyManagement';
+import { AdminPerformanceDashboard } from './components/AdminPerformanceDashboard';
 import { Sale } from './types';
 // PDF parsing logic pulled into helper to keep App clean
 const processPDFFile = async (
@@ -68,6 +70,7 @@ const processPDFFile = async (
     const color = (fullText.match(/Couleur[\s",:]+(?:Couleur[\s",:]+)?([A-Z\s]+?)(?=\s*Puiss|\s*1ère|\s*Immat|")/i) || [])[1]?.trim() || '';
     const plaque = (fullText.match(/Immat\.?[\s",:]+(?:Immat\.?[\s",:]+)?([A-Z0-9-]{7,9})/i) || [])[1] || '';
     const vin = (fullText.match(/VIN[\s",:]+(?:VIN[\s",:]+)?([A-Z0-9]{17})/i) || [])[1] || '';
+    const mec = (fullText.match(/M\.E\.C\.?\s*[:\s]*(\d{2}\/\d{2}\/\d{4})/i) || [])[1] || '';
 
     // Robust Vehicle Price Extraction with Cascading Fallbacks
     let price = 0;
@@ -120,7 +123,7 @@ const processPDFFile = async (
       bdcNumber: finalBdc, 
       company, 
       clientName, 
-      marque, modele, color, vin, plaque, 
+      marque, modele, color, vin, plaque, mec,
       price: price ? price.toString() : (existingSale ? existingSale.price.toString() : ''), 
       date: dateFormatted, 
       commercial: existingSale ? (existingSale.commercial || 'À assigner') : 'À assigner', 
@@ -152,6 +155,7 @@ const MainAppContent: React.FC = () => {
   const [isEditingCompany, setIsEditingCompany] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showManageCompanies, setShowManageCompanies] = useState(false);
 
   useEffect(() => {
     if (userProfile?.companyId) {
@@ -175,6 +179,12 @@ const MainAppContent: React.FC = () => {
         setCurrentView('detail');
       } else if (hash === '#pdf_validation') {
         setCurrentView('pdf_validation');
+      } else if (hash === '#perf_dashboard') {
+        if (userProfile?.role === 'admin') {
+          setCurrentView('perf_dashboard');
+        } else {
+          window.location.hash = 'dashboard';
+        }
       } else {
         setSelectedSaleId(null);
         setCurrentView('dashboard');
@@ -186,12 +196,12 @@ const MainAppContent: React.FC = () => {
     // Initial sync
     if (window.location.hash) {
       handleHashChange();
-    } else {
-      window.location.hash = 'dashboard';
+    } else if (userProfile) {
+      window.location.hash = userProfile.role === 'admin' ? 'perf_dashboard' : 'dashboard';
     }
 
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [userProfile]);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success', duration = 4000) => {
     setToast({ show: true, message, type });
@@ -428,6 +438,18 @@ const MainAppContent: React.FC = () => {
 
             {userProfile?.role === 'admin' && (
               <button 
+                onClick={() => window.location.hash = 'perf_dashboard'}
+                className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${currentView === 'perf_dashboard' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
+                title="Performance"
+              >
+                <TrendingUp size={20} />
+                <span className="text-[9px] font-bold tracking-tight block md:hidden lg:block">Stats</span>
+                <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Performances</div>
+              </button>
+            )}
+
+            {userProfile?.role === 'admin' && (
+              <button 
                 onClick={() => setShowTeam(true)}
                 className="p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full text-slate-400 hover:text-white hover:bg-slate-900 transition-all group relative"
                 title="Équipe"
@@ -587,6 +609,17 @@ const MainAppContent: React.FC = () => {
                             <Users size={14} className="text-slate-500" />
                             <span>Gérer l'équipe</span>
                           </button>
+
+                          <button 
+                            onClick={() => {
+                              setShowProfileMenu(false);
+                              setShowManageCompanies(true);
+                            }}
+                            className="flex items-center gap-2 px-2.5 py-2 hover:bg-slate-50 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-bold transition-all text-left"
+                          >
+                            <Car size={14} className="text-slate-500" />
+                            <span>Gérer mes filiales</span>
+                          </button>
                         </>
                       )}
                     </div>
@@ -670,6 +703,20 @@ const MainAppContent: React.FC = () => {
 
           {/* Right actions & KPIs */}
           <div className="flex items-center gap-4">
+            {userProfile?.role === 'admin' && (
+              <button
+                onClick={() => window.location.hash = currentView === 'perf_dashboard' ? 'dashboard' : 'perf_dashboard'}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all duration-200 border shadow-sm cursor-pointer ${
+                  currentView === 'perf_dashboard'
+                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-indigo-600/20 hover:bg-indigo-500'
+                    : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700 hover:text-indigo-600'
+                }`}
+              >
+                <TrendingUp size={14} />
+                <span>{currentView === 'perf_dashboard' ? 'Voir Ventes' : 'Performances'}</span>
+              </button>
+            )}
+
             {/* Portefeuille actif KPI (Forte valeur ajoutée artisanale) */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-1.5 flex flex-col text-right shadow-inner">
               <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Portefeuille actif</span>
@@ -695,6 +742,7 @@ const MainAppContent: React.FC = () => {
 
         {showTeam && <TeamManagement onClose={() => setShowTeam(false)} onShowToast={showToast} />}
         {showSuperAdmin && <SuperAdmin onClose={() => setShowSuperAdmin(false)} onShowToast={showToast} />}
+        {showManageCompanies && <CompanyManagement onClose={() => setShowManageCompanies(false)} onShowToast={showToast} />}
 
         {/* FLUID WORKSPACE (No boxed max-width restrictions!) */}
         <main className="flex-1 overflow-y-auto bg-slate-50 p-6">
@@ -710,10 +758,13 @@ const MainAppContent: React.FC = () => {
                   onSelectSale={(id) => window.location.hash = `detail/${id}`} 
                   onProcessPdf={(f) => processPDFFile(f, sales, setDraftExtraction, (view) => window.location.hash = view, showToast, setIsLoading)}
                   onManualEntry={() => {
-                    setDraftExtraction({ isManual: true, bdcNumber: '', company: 'KDB AUTO', clientName: '', marque: '', modele: '', color: '', vin: '', plaque: '', price: '', date: new Date().toISOString().split('T')[0], commercial: 'À assigner', phone: '', email: '', ref: '', draftPayments: [] });
+                    setDraftExtraction({ isManual: true, bdcNumber: '', company: 'KDB AUTO', clientName: '', marque: '', modele: '', color: '', vin: '', plaque: '', mec: '', price: '', date: new Date().toISOString().split('T')[0], commercial: 'À assigner', phone: '', email: '', ref: '', draftPayments: [] });
                     window.location.hash = 'pdf_validation';
                   }}
                 />
+              )}
+              {currentView === 'perf_dashboard' && (
+                <AdminPerformanceDashboard />
               )}
               {currentView === 'detail' && selectedSaleId && (
                 <SaleDetail 

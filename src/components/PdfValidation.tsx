@@ -15,7 +15,7 @@ interface Props {
 }
 
 export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onShowToast, onSuccess }) => {
-  const { sales, payments, userAuth, databaseUid, teamMembers } = useApp();
+  const { sales, payments, userAuth, databaseUid, teamMembers, userProfile } = useApp();
   const [isLoading, setIsLoading] = useState(false);
   const [draft, setDraft] = useState(draftExtraction);
 
@@ -23,7 +23,12 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
   const isExistingWarning = !isEditing && !draft.isManual && sales.some(s => s.company === draft.company && String(s.bdcNumber) === draft.bdcNumber && draft.bdcNumber !== '');
 
   const commerciaux = ['À assigner', ...Array.from(new Set(teamMembers.map(t => t.name)))];
-  const entreprisesList = Array.from(new Set(sales.map(s => s.company).filter(Boolean)));
+  const userCompanies = userProfile?.companiesList || [];
+  const entreprisesList = Array.from(new Set([
+    ...(userProfile?.companyId ? [userProfile.companyId] : []),
+    ...userCompanies,
+    ...sales.map(s => s.company).filter(Boolean)
+  ]));
   if (!entreprisesList.includes('KDB AUTO')) entreprisesList.push('KDB AUTO');
   if (!entreprisesList.includes('DJ CAR')) entreprisesList.push('DJ CAR');
   const entreprises = entreprisesList;
@@ -45,6 +50,7 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
       color: String(fd.get('color') || '').toUpperCase(),
       vin: String(fd.get('vin') || '').toUpperCase(),
       plaque: String(fd.get('plaque') || '').toUpperCase(),
+      mec: String(fd.get('mec') || '').trim().toUpperCase(),
       price: parseFloat(fd.get('price') as string) || 0,
       transport: parseFloat(fd.get('transport') as string) || 0,
       date: fd.get('date') as string,
@@ -72,6 +78,12 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
       } else {
         await setDoc(saleRef, { ...dataToSave, id: targetId, notes: [], factureStatus: 'non_facture', releaseStatus: 'non_sorti' }, { merge: true });
         onShowToast(`Dossier créé avec succès !`, 'success');
+        
+        // EXCLUSIVITÉ DJ CAR : Le système d'envoi d'e-mails pour les nouveaux bons de commande est réservé uniquement à DJ CAR.
+        if (data.company === 'DJ CAR') {
+          console.log("Notification d'e-mail automatique disponible uniquement pour la compagnie DJ CAR");
+          // TODO: Configuration SMTP ou Webhook d'envoi d'e-mail complexe pour DJ CAR
+        }
       }
 
       // IMPORT DES ACOMPTES INITIAUX ONLY IF NEW
@@ -189,7 +201,11 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
                   <label className="block text-xs font-bold text-slate-700 mb-1">Plaque (Immat)</label>
                   <input type="text" name="plaque" defaultValue={draft.plaque} className="w-full p-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold font-mono" />
                 </div>
-                <div className="col-span-8 mt-2">
+                <div className="col-span-4 mt-2">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">M.E.C. / Année</label>
+                  <input type="text" name="mec" placeholder="JJ/MM/AAAA ou Année" defaultValue={draft.mec} className="w-full p-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold" />
+                </div>
+                <div className="col-span-4 mt-2">
                   <label className="block text-xs font-bold text-slate-700 mb-1">VIN</label>
                   <input type="text" name="vin" defaultValue={draft.vin} className="w-full p-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold font-mono" />
                 </div>

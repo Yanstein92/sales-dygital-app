@@ -6,6 +6,7 @@ import { Sale, Payment, UserProfile } from '../types';
 interface AppContextType {
   userAuth: User | null;
   userProfile: UserProfile | null;
+  setUserProfile: React.Dispatch<React.SetStateAction<UserProfile | null>>;
   sales: Sale[];
   payments: Payment[];
   isDbLoading: boolean;
@@ -171,7 +172,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [userAuth]);
 
   return (
-    <AppContext.Provider value={{ userAuth, userProfile, sales, payments, isDbLoading, authError, setAuthError, databaseUid, teamMembers, refreshTeam }}>
+    <AppContext.Provider value={{ userAuth, userProfile, setUserProfile, sales, payments, isDbLoading, authError, setAuthError, databaseUid, teamMembers, refreshTeam }}>
       {children}
     </AppContext.Provider>
   );

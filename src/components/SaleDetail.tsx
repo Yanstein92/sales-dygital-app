@@ -344,6 +344,7 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
             <table className="w-full text-sm">
               <tbody>
                 <tr className="border-b border-slate-100"><td className="py-4 px-6 font-bold text-slate-500 bg-slate-50 w-1/3">Véhicule</td><td className="py-4 px-6 font-black text-blue-900 text-base">{sale.marque} {sale.modele} <span className="text-xs text-slate-500 font-bold ml-1">({sale.color})</span></td></tr>
+                <tr className="border-b border-slate-100"><td className="py-4 px-6 font-bold text-slate-500 bg-slate-50">M.E.C / Année</td><td className="py-4 px-6 text-slate-800 font-bold text-sm">{(sale as any).mec || '-'}</td></tr>
                 <tr>
                   <td className="py-4 px-6 font-bold text-slate-500 bg-slate-50">Immat / VIN</td>
                   <td className="py-4 px-6 text-slate-800 font-mono text-sm font-bold flex flex-col gap-1">
