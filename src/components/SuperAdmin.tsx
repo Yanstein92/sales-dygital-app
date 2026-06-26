@@ -45,13 +45,37 @@ export const SuperAdmin: React.FC<{
   const fetchAllSales = async () => {
     setIsLoadingSales(true);
     try {
-      const salesQuery = collectionGroup(db, 'sales');
-      const salesQuerySnapshot = await getDocs(salesQuery);
-      const salesData = salesQuerySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sale));
-      setAllSales(salesData);
+      const res = await fetch('/api/sales');
+      if (res.ok) {
+        const salesData = await res.json();
+        setAllSales(salesData);
+      } else {
+        console.warn("Backend /api/sales failed, falling back to direct collectionGroup query");
+        const salesQuery = collectionGroup(db, 'sales');
+        const salesQuerySnapshot = await getDocs(salesQuery);
+        const salesData = salesQuerySnapshot.docs.map(doc => ({
+          id: doc.id,
+          refPath: doc.ref.path,
+          ...doc.data()
+        } as any));
+        setAllSales(salesData);
+      }
     } catch (e) {
       console.error(e);
-      onShowToast("Erreur lors de la récupération de tous les clients", "error");
+      // Fallback in case of networking issues or unsupported fetch
+      try {
+        const salesQuery = collectionGroup(db, 'sales');
+        const salesQuerySnapshot = await getDocs(salesQuery);
+        const salesData = salesQuerySnapshot.docs.map(doc => ({
+          id: doc.id,
+          refPath: doc.ref.path,
+          ...doc.data()
+        } as any));
+        setAllSales(salesData);
+      } catch (innerError) {
+        console.error("Fallback query also failed:", innerError);
+        onShowToast("Erreur lors de la récupération de tous les clients", "error");
+      }
     } finally {
       setIsLoadingSales(false);
     }
@@ -155,7 +179,7 @@ export const SuperAdmin: React.FC<{
     
     const headers = [
       "Identifiant", "Date d'ajout", "Entreprise (Plateforme)", "Client (Nom)", "Téléphone", "Email", 
-      "Marque", "Modèle", "Couleur", "Immatriculation", "VIN", "Numéro de BDC", 
+      "Marque", "Modèle", "Couleur", "M.E.C / Année", "Immatriculation", "VIN", "Numéro de BDC", 
       "Prix initial", "Statut Paiement", "Montant Payé", "Commercial Associé", "Notes"
     ];
     
@@ -174,6 +198,7 @@ export const SuperAdmin: React.FC<{
           sale.marque || '',
           sale.modele || '',
           sale.color || '',
+          sale.mec || '',
           sale.plaque || '',
           sale.vin || '',
           sale.bdcNumber || '',
@@ -376,7 +401,8 @@ export const SuperAdmin: React.FC<{
                             <table className="w-full text-left text-sm whitespace-nowrap">
                                <thead className="bg-slate-50 border-b border-slate-200">
                                  <tr>
-                                   <th className="px-6 py-4 font-bold text-slate-800 uppercase text-xs">Entreprise (Plateforme)</th>
+                                   <th className="px-6 py-4 font-bold text-slate-800 uppercase text-xs">Entreprise (BDC)</th>
+                                    <th className="px-6 py-4 font-bold text-slate-800 uppercase text-xs">Compte Client / Groupe</th>
                                    <th className="px-6 py-4 font-bold text-slate-800 uppercase text-xs">Date</th>
                                    <th className="px-6 py-4 font-bold text-slate-800 uppercase text-xs">Client</th>
                                    <th className="px-6 py-4 font-bold text-slate-800 uppercase text-xs">Véhicule</th>
@@ -385,20 +411,74 @@ export const SuperAdmin: React.FC<{
                                  </tr>
                                </thead>
                                <tbody className="divide-y divide-slate-100">
-                                  {allSales.map(sale => (
-                                    <tr key={sale.id} className="hover:bg-slate-50 transition-colors">
-                                       <td className="px-6 py-4 font-bold text-indigo-700">{sale.company || '-'}</td>
-                                       <td className="px-6 py-4 text-slate-600">{sale.date}</td>
-                                       <td className="px-6 py-4 font-bold text-slate-800">{sale.clientName}</td>
-                                       <td className="px-6 py-4 text-slate-600">
-                                          {sale.marque} {sale.modele} <span className="text-xs text-slate-400">({sale.plaque})</span>
-                                       </td>
-                                       <td className="px-6 py-4 font-bold">{sale.price ? `${sale.price} €` : '-'}</td>
-                                       <td className="px-6 py-4 text-slate-500 text-xs max-w-xs truncate">
-                                          {(sale.notes || []).map(n => n.text).join(', ') || '-'}
-                                       </td>
-                                    </tr>
-                                  ))}
+                                  {allSales.map(sale => {
+                                    let ownerUid = '';
+                                     if (sale.refPath) {
+                                       const pathSegments = sale.refPath.split('/');
+                                       const usersIndex = pathSegments.indexOf('users');
+                                       if (usersIndex !== -1 && pathSegments[usersIndex + 1]) {
+                                         ownerUid = pathSegments[usersIndex + 1];
+                                       }
+                                     }
+
+                                     const ownerProfile = users.find(u => u.uid === ownerUid);
+                                     const parentCompany = ownerProfile?.companyId || 'N/A';
+
+                                     const ownerSales = allSales.filter(s => {
+                                       let sOwnerUid = '';
+                                       if (s.refPath) {
+                                         const sSegments = s.refPath.split('/');
+                                         const sIdx = sSegments.indexOf('users');
+                                         if (sIdx !== -1 && sSegments[sIdx + 1]) {
+                                           sOwnerUid = sSegments[sIdx + 1];
+                                         }
+                                       }
+                                       return sOwnerUid === ownerUid;
+                                     });
+
+                                     const uniqueCompanies = Array.from(new Set([
+                                       ...(ownerProfile?.companyId ? [ownerProfile.companyId] : []),
+                                       ...(ownerProfile?.companiesList || []),
+                                       ...ownerSales.map(s => s.company).filter(Boolean)
+                                     ]));
+
+                                     const hasMultipleCompanies = uniqueCompanies.length > 1;
+
+                                     return (
+                                       <tr key={sale.id} className="hover:bg-slate-50 transition-colors">
+                                          <td className="px-6 py-4">
+                                             <div className="flex flex-col">
+                                                <span className="font-extrabold text-indigo-900 text-sm">{sale.company || '-'}</span>
+                                                {hasMultipleCompanies && (
+                                                  <span className="text-[9px] bg-indigo-50 border border-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-black mt-1 self-start uppercase tracking-wider">
+                                                    Multi-Société
+                                                  </span>
+                                                )}
+                                             </div>
+                                          </td>
+                                          <td className="px-6 py-4">
+                                             <div className="flex flex-col">
+                                                <span className="font-bold text-slate-800 text-sm">{parentCompany}</span>
+                                                <span className="text-[10px] text-slate-400 font-semibold mt-0.5 truncate max-w-[200px]" title={uniqueCompanies.join(', ')}>
+                                                  Filiales : {uniqueCompanies.join(', ')}
+                                                </span>
+                                             </div>
+                                          </td>
+                                          <td className="px-6 py-4 text-slate-600">{sale.date}</td>
+                                          <td className="px-6 py-4 font-bold text-slate-800">{sale.clientName}</td>
+                                          <td className="px-6 py-4 text-slate-600">
+                                             <div className="flex flex-col">
+                                                <span>{sale.marque} {sale.modele} <span className="text-xs text-slate-400">({sale.plaque})</span></span>
+                                                {sale.mec && <span className="text-[10px] text-slate-500 font-bold mt-0.5">M.E.C : {sale.mec}</span>}
+                                             </div>
+                                          </td>
+                                          <td className="px-6 py-4 font-bold">{sale.price ? `${sale.price} €` : '-'}</td>
+                                          <td className="px-6 py-4 text-slate-500 text-xs max-w-xs truncate">
+                                             {(sale.notes || []).map(n => n.text).join(', ') || '-'}
+                                          </td>
+                                       </tr>
+                                     );
+                                   })}
                                </tbody>
                             </table>
                          </div>

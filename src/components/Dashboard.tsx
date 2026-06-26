@@ -2,9 +2,10 @@ import React, { useState, useRef } from 'react';
 import { 
   User, Building2, Banknote, Search, UploadCloud, Plus, X, 
   ArrowUpDown, ChevronUp, ChevronDown, Clock, CheckCircle2, 
-  Car, MessageCircle, Mail, Hash, CreditCard, ChevronRight
+  Car, MessageCircle, Mail, Hash, CreditCard, ChevronRight,
+  RotateCcw
 } from 'lucide-react';
-import { db, doc, setDoc, getUserPath } from '../lib/firebase';
+import { db, doc, setDoc, getDoc, getUserPath, getUserDocPath } from '../lib/firebase';
 import { useApp } from '../lib/context';
 import { Sale } from '../types';
 
@@ -19,13 +20,52 @@ export const Dashboard: React.FC<{
   const [filterCommercial, setFilterCommercial] = useState('Tous');
   const [filterStatus, setFilterStatus] = useState('Tous'); 
   const [filterCompany, setFilterCompany] = useState('Toutes');
-  const [filterReleaseStatus, setFilterReleaseStatus] = useState('Non sorti'); // Release statuses: 'Tous', 'Non sorti', 'Programmé', 'Sorti', 'Sorti TPD'
+  const [filterReleaseStatus, setFilterReleaseStatus] = useState('Tous'); // Release statuses: 'Tous', 'Non sorti', 'Programmé', 'Sorti', 'Sorti TPD'
   const [filterFacture, setFilterFacture] = useState('Tous'); // 'Tous', 'Facturé', 'Non facturé', 'Remboursé'
   const [showFilters, setShowFilters] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
   const [isDragging, setIsDragging] = useState(false);
+
+  const [latePaymentDays, setLatePaymentDays] = useState<number>(5);
+
+  React.useEffect(() => {
+    const fetchThreshold = async () => {
+      if (!databaseUid) return;
+      try {
+        const configDocRef = doc(db, getUserDocPath(databaseUid) + '/settings/enterprise_config');
+        const snap = await getDoc(configDocRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data && typeof data.latePaymentDaysThreshold === 'number') {
+            setLatePaymentDays(data.latePaymentDaysThreshold);
+          }
+        }
+      } catch (e) {
+        console.error("Error reading enterprise config in Dashboard:", e);
+      }
+    };
+    fetchThreshold();
+  }, [databaseUid]);
+
+  const defaultCommercial = (userProfile && userProfile.role !== 'admin' && userProfile.name) ? userProfile.name : 'Tous';
+  const hasActiveFilters = 
+    searchQuery !== '' ||
+    filterCommercial !== defaultCommercial ||
+    filterStatus !== 'Tous' ||
+    filterCompany !== 'Toutes' ||
+    filterReleaseStatus !== 'Tous' ||
+    filterFacture !== 'Tous';
+
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setFilterCommercial(defaultCommercial);
+    setFilterStatus('Tous');
+    setFilterCompany('Toutes');
+    setFilterReleaseStatus('Tous');
+    setFilterFacture('Tous');
+  };
 
   const pdfInputRef = useRef<HTMLInputElement>(null);
 
@@ -53,7 +93,7 @@ export const Dashboard: React.FC<{
     if (isNaN(dateVente.getTime())) return 0;
     dateVente.setHours(0, 0, 0, 0);
     const dateLimite = new Date(dateVente); 
-    dateLimite.setDate(dateLimite.getDate() + 5); 
+    dateLimite.setDate(dateLimite.getDate() + latePaymentDays); 
     return Math.ceil((dateLimite.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) || 0;
   };
 
@@ -75,6 +115,18 @@ export const Dashboard: React.FC<{
   };
 
   let processedSales = sales.filter(s => {
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const clientMatch = String(s.clientName || '').toLowerCase().includes(q);
+      const vinMatch = String(s.vin || '').toLowerCase().includes(q);
+      const plaqueMatch = String(s.plaque || '').toLowerCase().includes(q);
+      const refMatch = String(s.ref || '').toLowerCase().includes(q);
+      const bdcMatch = String(s.bdcNumber || '').toLowerCase().includes(q);
+      const marqueMatch = String(s.marque || '').toLowerCase().includes(q);
+      const modeleMatch = String(s.modele || '').toLowerCase().includes(q);
+      return clientMatch || vinMatch || plaqueMatch || refMatch || bdcMatch || marqueMatch || modeleMatch;
+    }
+
     // Role based filtering: 
     // Commercials can only see their own by default, unless they override. 
     // Wait, the prompt says "Commerciaux: controle sur les cartes qu'ils ont creer + celles des autres"
@@ -100,15 +152,6 @@ export const Dashboard: React.FC<{
       if (filterReleaseStatus === 'Sorti TPD' && relStat !== 'sorti_tpd') return false;
     }
 
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      const clientMatch = String(s.clientName || '').toLowerCase().includes(q);
-      const vinMatch = String(s.vin || '').toLowerCase().includes(q);
-      const plaqueMatch = String(s.plaque || '').toLowerCase().includes(q);
-      const refMatch = String(s.ref || '').toLowerCase().includes(q);
-      const bdcMatch = String(s.bdcNumber || '').toLowerCase().includes(q);
-      if (!clientMatch && !vinMatch && !plaqueMatch && !refMatch && !bdcMatch) return false;
-    }
     return true;
   });
 
@@ -221,6 +264,16 @@ export const Dashboard: React.FC<{
                 {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"><X className="h-4 w-4"/></button>}
               </div>
 
+              {hasActiveFilters && (
+                <button
+                  onClick={handleResetFilters}
+                  className="flex-none p-2 rounded-lg border border-red-100 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 transition-colors cursor-pointer flex items-center justify-center animate-scale-up"
+                  title="Réinitialiser tous les filtres"
+                >
+                  <RotateCcw size={15} />
+                </button>
+              )}
+
               <button 
                 onClick={() => setShowFilters(!showFilters)} 
                 className={`flex-none flex items-center gap-2 px-3 py-2 rounded-lg border shadow-sm transition-colors ${showFilters ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
@@ -244,7 +297,7 @@ export const Dashboard: React.FC<{
                 <div className="flex items-center space-x-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 shadow-sm">
                   <Building2 size={16} className="text-slate-500" />
                   <select className="bg-transparent border-none text-sm focus:ring-0 text-slate-700 outline-none cursor-pointer font-bold" value={filterCompany} onChange={(e) => setFilterCompany(e.target.value)}>
-                    {entreprises.map((c, i) => <option key={`ent_${i}_${c}`} value={c}>{c}</option>)}
+                    {entreprises.map((c, i) => <option key={`ent_${i}_${c}`} value={c}>{c === 'Toutes' ? 'Toutes les entreprises' : c}</option>)}
                   </select>
                 </div>
                 <div className="flex items-center space-x-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 shadow-sm">
@@ -257,13 +310,13 @@ export const Dashboard: React.FC<{
                 </div>
                 {/* NEW FILTERS */}
                 <select className="bg-slate-50 px-3 py-2 border border-slate-200 shadow-sm rounded-xl text-sm outline-none font-bold text-slate-700 cursor-pointer" value={filterFacture} onChange={(e) => setFilterFacture(e.target.value)}>
-                  <option value="Tous">Factures : Toutes</option>
+                  <option value="Tous">Facture : Toutes</option>
                   <option value="Facturé">Facturées</option>
                   <option value="Non facturé">Non facturées</option>
                   <option value="Remboursé">Remboursés</option>
                 </select>
                 <select className="bg-slate-50 px-3 py-2 border border-slate-200 shadow-sm rounded-xl text-sm outline-none font-bold text-slate-700 cursor-pointer" value={filterReleaseStatus} onChange={(e) => setFilterReleaseStatus(e.target.value)}>
-                  <option value="Tous">Sorties : Toutes</option>
+                  <option value="Tous">État : Tout</option>
                   <option value="Non sorti">En Parc</option>
                   <option value="Programmé">Programmées</option>
                   <option value="Sorti">Sorties</option>
@@ -335,10 +388,12 @@ export const Dashboard: React.FC<{
                     onClick={() => onSelectSale(sale.id)} 
                     className={`${rowClass} transition-colors cursor-pointer hover:shadow-inner group/row`}
                   >
-                    <td className="px-5 py-4 align-top w-24">
-                      <div className="font-mono font-black text-slate-800 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md inline-block shadow-sm">#{sale.bdcNumber}</div>
-                      <div className="mt-2 text-center">
-                        <span className={`text-[9px] uppercase font-black px-2 py-1 rounded-md border shadow-sm ${sale.company === 'KDB AUTO' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>{sale.company}</span>
+                    <td className="px-5 py-4 align-top w-28 text-left">
+                      <div className={`text-[11px] uppercase font-black tracking-wider ${sale.company === 'KDB AUTO' ? 'text-red-600' : 'text-indigo-600'}`}>
+                        {sale.company}
+                      </div>
+                      <div className="font-mono text-xs font-bold text-slate-500 mt-1">
+                        #{sale.bdcNumber}
                       </div>
                     </td>
                     <td className="px-5 py-4 align-top w-64">
@@ -388,7 +443,14 @@ export const Dashboard: React.FC<{
                     <td className="px-5 py-4 align-top w-80">
                       <div className={`font-bold text-slate-800 text-base ${isRefunded ? 'text-slate-400 font-normal' : ''}`} onClick={(e) => e.stopPropagation()}>{sale.marque} {sale.modele} <span className="text-sm font-medium text-slate-500">({sale.color})</span></div>
                       <div className="mt-2 flex flex-col gap-1.5 items-start">
-                        <span className="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 flex items-center gap-1 shadow-sm" onClick={(e) => e.stopPropagation()}><Car size={12}/> {sale.plaque || '-'}</span>
+                        <div className="flex flex-wrap gap-1.5 items-center">
+                          <span className="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 flex items-center gap-1 shadow-sm" onClick={(e) => e.stopPropagation()}><Car size={12}/> {sale.plaque || '-'}</span>
+                          {(sale as any).mec && (
+                            <span className="text-[11px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md flex items-center shadow-sm" onClick={(e) => e.stopPropagation()}>
+                              M.E.C : {(sale as any).mec}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2">
                            <span className="text-[11px] text-slate-500 font-mono bg-white px-2 py-0.5 rounded-md border border-slate-200 break-all leading-tight shadow-sm" onClick={(e) => e.stopPropagation()}>
                              {sale.vin || '-'}
@@ -415,7 +477,7 @@ export const Dashboard: React.FC<{
                     <td className="px-5 py-4 text-center align-top w-32">
                         <div className="font-black text-slate-700 mb-2">{new Date(sale.date).toLocaleDateString('fr-FR')}</div>
                         <div className="flex justify-center">
-                          {isPaid ? <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1"><CheckCircle2 size={14} className="text-emerald-500"/> Soldé</span> : isOverdue ? <span className="text-[11px] font-black text-red-700 flex items-center gap-1 bg-red-100 border border-red-200 px-2 py-1 rounded-md shadow-sm"><Clock size={12}/> Retard {Math.abs(daysDiff)}j</span> : <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-md shadow-sm flex items-center gap-1"><Clock size={12}/> {daysDiff} jour(s) rest.</span>}
+                          {isPaid ? <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1"><CheckCircle2 size={14} className="text-emerald-500"/> Soldé</span> : isOverdue ? <span className="text-[11px] font-black text-red-600 flex items-center gap-1"><Clock size={12}/> Retard {Math.abs(daysDiff)}j</span> : <span className="text-[11px] font-bold text-amber-600 flex items-center gap-1"><Clock size={12}/> {daysDiff} jour(s) rest.</span>}
                         </div>
                     </td>
                     <td className="px-5 py-4 text-right align-top w-44">

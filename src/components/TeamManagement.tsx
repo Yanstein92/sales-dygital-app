@@ -13,22 +13,22 @@ export const TeamManagement: React.FC<{ onClose: () => void, onShowToast: (m: st
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState<'commercial' | 'park_manager'>('commercial');
 
-  const toggleRole = async (member: UserProfile) => {
+  const changeRole = async (member: UserProfile, updatedRole: 'admin' | 'commercial' | 'park_manager') => {
     if (member.uid === userProfile?.uid) {
       onShowToast("Vous ne pouvez pas modifier votre propre rôle.", "error");
       return;
     }
-    const newRole = member.role === 'admin' ? 'commercial' : 'admin';
     try {
       const res = await fetch(`/api/users/${member.uid}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: newRole })
+        body: JSON.stringify({ role: updatedRole })
       });
       if (res.ok) {
-        try { await setDoc(doc(db, getUserDocPath(member.uid)), { role: newRole }, { merge: true }); } catch (e) {}
-        onShowToast(`Rôle mis à jour: ${newRole}`, "success");
+        try { await setDoc(doc(db, getUserDocPath(member.uid)), { role: updatedRole }, { merge: true }); } catch (e) {}
+        onShowToast(`Rôle mis à jour: ${updatedRole}`, "success");
         refreshTeam();
       } else {
         onShowToast("Erreur lors de la mise à jour", "error");
@@ -54,6 +54,7 @@ export const TeamManagement: React.FC<{ onClose: () => void, onShowToast: (m: st
           name: newName,
           companyId: userProfile.companyId,
           adminUid: userProfile.uid,
+          role: newRole,
           testMode: userProfile.testMode || false,
         }),
       });
@@ -72,16 +73,17 @@ export const TeamManagement: React.FC<{ onClose: () => void, onShowToast: (m: st
           name: newName,
           companyId: userProfile.companyId,
           adminUid: userProfile.uid,
-          role: "commercial",
+          role: newRole,
           testMode: userProfile.testMode || false,
         }, { merge: true });
       } catch (e) {}
       
-      onShowToast("Commercial ajouté avec succès !", "success");
+      onShowToast(newRole === 'park_manager' ? "Gestionnaire de parc ajouté avec succès !" : "Commercial ajouté avec succès !", "success");
       setShowAddForm(false);
       setNewName('');
       setNewEmail('');
       setNewPassword('');
+      setNewRole('commercial');
       refreshTeam();
     } catch (err: any) {
       console.error(err);
@@ -133,7 +135,7 @@ export const TeamManagement: React.FC<{ onClose: () => void, onShowToast: (m: st
 
               {showAddForm && (
                 <div className="bg-white p-5 rounded-xl border border-emerald-200 shadow-md mb-6 animate-fade-in-up">
-                  <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2 text-sm"><UserPlus size={18} className="text-emerald-600"/> Nouveau Commercial</h4>
+                  <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2 text-sm"><UserPlus size={18} className="text-emerald-600"/> Nouveau Membre d'Équipe</h4>
                   <form onSubmit={handleCreateCommercial} className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
@@ -142,7 +144,7 @@ export const TeamManagement: React.FC<{ onClose: () => void, onShowToast: (m: st
                           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <User size={16} className="text-slate-400" />
                           </div>
-                          <input type="text" required value={newName} onChange={e => setNewName(e.target.value)} className="block w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Paul Commercial"/>
+                          <input type="text" required value={newName} onChange={e => setNewName(e.target.value)} className="block w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Paul Dupont"/>
                         </div>
                       </div>
                       <div>
@@ -154,7 +156,18 @@ export const TeamManagement: React.FC<{ onClose: () => void, onShowToast: (m: st
                           <input type="email" required value={newEmail} onChange={e => setNewEmail(e.target.value)} className="block w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="paul@exemple.fr"/>
                         </div>
                       </div>
-                      <div className="md:col-span-2">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Rôle d'accès</label>
+                        <select 
+                          value={newRole} 
+                          onChange={e => setNewRole(e.target.value as any)} 
+                          className="block w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white font-medium"
+                        >
+                          <option value="commercial">👤 Commercial</option>
+                          <option value="park_manager">⚙️ Gestionnaire de parc</option>
+                        </select>
+                      </div>
+                      <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Mot de passe temporaire</label>
                         <div className="relative">
                           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -171,90 +184,111 @@ export const TeamManagement: React.FC<{ onClose: () => void, onShowToast: (m: st
                 </div>
               )}
 
-              {teamMembers.map(m => (
-                <div key={m.uid} className="bg-white border text-sm border-slate-200 p-4 rounded-xl flex items-center justify-between shadow-sm">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-white ${m.role === 'admin' ? 'bg-blue-600' : 'bg-slate-400'}`}>
-                      {m.name.substring(0, 1).toUpperCase()}
+              {teamMembers.map(m => {
+                const getRoleLabel = (role: string) => {
+                  if (role === 'admin') return 'Administrateur';
+                  if (role === 'park_manager') return 'Gestionnaire Parc';
+                  return 'Commercial';
+                };
+                const getRoleColor = (role: string) => {
+                  if (role === 'admin') return 'bg-blue-100 text-blue-800 border-blue-200';
+                  if (role === 'park_manager') return 'bg-purple-100 text-purple-800 border-purple-200';
+                  return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                };
+
+                return (
+                  <div key={m.uid} className="bg-white border text-sm border-slate-200 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm hover:border-slate-300 transition-colors">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-white shrink-0 ${
+                        m.role === 'admin' ? 'bg-blue-600' : m.role === 'park_manager' ? 'bg-purple-600' : 'bg-emerald-600'
+                      }`}>
+                        {m.name.substring(0, 1).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-slate-800 truncate">{m.name}</h4>
+                        <div className="text-slate-500 text-xs truncate">{m.email}</div>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-slate-800">{m.name}</h4>
-                      <div className="text-slate-500 text-xs">{m.email}</div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-md flex items-center gap-1 ${m.role === 'admin' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'}`}>
-                      {m.role === 'admin' ? <ShieldCheck size={12} /> : <User size={12} />} 
-                      {m.role}
-                    </span>
-                    <button 
-                      onClick={async () => {
-                        const newPass = window.prompt(`Saisir le nouveau mot de passe pour ${m.name} (Min 6 caractères) :`);
-                        if (newPass) {
-                          if (newPass.length < 6) {
-                            alert("Le mot de passe doit comporter au moins 6 caractères.");
+                    
+                    <div className="flex items-center flex-wrap gap-2">
+                      <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-md border flex items-center gap-1 ${getRoleColor(m.role)}`}>
+                        {m.role === 'admin' ? <ShieldCheck size={12} /> : <User size={12} />} 
+                        {getRoleLabel(m.role)}
+                      </span>
+                      <button 
+                        onClick={async () => {
+                          const newPass = window.prompt(`Saisir le nouveau mot de passe pour ${m.name} (Min 6 caractères) :`);
+                          if (newPass) {
+                            if (newPass.length < 6) {
+                              alert("Le mot de passe doit comporter au moins 6 caractères.");
+                              return;
+                            }
+                            try {
+                              const response = await fetch(`/api/users/${m.uid}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ password: newPass })
+                              });
+                              if (response.ok) {
+                                onShowToast("Mot de passe modifié avec succès.", "success");
+                              } else {
+                                const err = await response.json();
+                                onShowToast(err.error || "Mise à jour échouée.", "error");
+                              }
+                            } catch (e) {
+                              onShowToast("Erreur réseau.", "error");
+                            }
+                          }
+                        }}
+                        className="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                        title="Changer le mot de passe"
+                      >
+                        <KeyRound size={14} />
+                      </button>
+
+                      {m.uid !== userProfile.uid ? (
+                        <select 
+                          value={m.role} 
+                          onChange={(e) => changeRole(m, e.target.value as any)} 
+                          className="text-xs bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg p-1.5 font-bold text-slate-700 focus:outline-none cursor-pointer"
+                        >
+                          <option value="commercial">Commercial</option>
+                          <option value="park_manager">Gest. de Parc</option>
+                          <option value="admin">Administrateur</option>
+                        </select>
+                      ) : null}
+
+                      <button 
+                        onClick={async () => {
+                          if (m.uid === userProfile.uid) {
+                            onShowToast("Vous ne pouvez pas supprimer votre propre compte.", "error");
                             return;
                           }
-                          try {
-                            const response = await fetch(`/api/users/${m.uid}`, {
-                              method: 'PUT',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ password: newPass })
-                            });
-                            if (response.ok) {
-                              onShowToast("Mot de passe modifié avec succès.", "success");
-                            } else {
-                              const err = await response.json();
-                              onShowToast(err.error || "Mise à jour échouée.", "error");
+                          if (confirm(`Êtes-vous sûr de vouloir supprimer ${m.name} ? Cette action est irréversible.`)) {
+                            try {
+                              const res = await fetch(`/api/users/${m.uid}`, { method: 'DELETE' });
+                              if (res.ok) {
+                                onShowToast("Membre supprimé avec succès", "success");
+                                refreshTeam();
+                              } else {
+                                const data = await res.json();
+                                onShowToast(data.error || "Erreur lors de la suppression.", "error");
+                              }
+                            } catch (err) {
+                              onShowToast("Erreur réseau.", "error");
                             }
-                          } catch (e) {
-                            onShowToast("Erreur réseau.", "error");
                           }
-                        }
-                      }}
-                      className="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white p-1.5 rounded-lg transition-colors flex items-center justify-center gap-1"
-                      title="Changer le mot de passe"
-                    >
-                      <KeyRound size={16} />
-                    </button>
-                    <button 
-                      onClick={() => toggleRole(m)}
-                      disabled={m.uid === userProfile.uid}
-                      className="text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors"
-                    >
-                      {m.role === 'admin' ? 'Rétrograder' : 'Promouvoir'}
-                    </button>
-                    <button 
-                      onClick={async () => {
-                        if (m.uid === userProfile.uid) {
-                          onShowToast("Vous ne pouvez pas supprimer votre propre compte.", "error");
-                          return;
-                        }
-                        if (confirm(`Êtes-vous sûr de vouloir supprimer ${m.name} ? Cette action est irréversible.`)) {
-                          try {
-                            const res = await fetch(`/api/users/${m.uid}`, { method: 'DELETE' });
-                            if (res.ok) {
-                              onShowToast("Membre supprimé avec succès", "success");
-                              refreshTeam();
-                            } else {
-                              const data = await res.json();
-                              onShowToast(data.error || "Erreur lors de la suppression.", "error");
-                            }
-                          } catch (err) {
-                            onShowToast("Erreur réseau.", "error");
-                          }
-                        }
-                      }}
-                      disabled={m.uid === userProfile.uid}
-                      className="text-xs font-bold bg-red-600 hover:bg-red-500 text-white p-1.5 rounded-lg disabled:opacity-50 transition-colors"
-                      title="Supprimer le membre"
-                    >
-                      <X size={16} />
-                    </button>
+                        }}
+                        disabled={m.uid === userProfile.uid}
+                        className="text-xs font-bold bg-red-600 hover:bg-red-500 text-white p-2 rounded-lg disabled:opacity-50 transition-colors cursor-pointer"
+                        title="Supprimer le membre"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
         </div>
       </div>

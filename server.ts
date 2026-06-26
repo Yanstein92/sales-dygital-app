@@ -20,9 +20,11 @@ async function startServer() {
       initializeApp({
         credential: cert(serviceAccount)
       });
-      console.log("Firebase Admin Initialized Successfully");
+      console.log("Firebase Admin Initialized Successfully with service account");
     } else {
-      console.warn("⚠️ FIREBASE_SERVICE_ACCOUNT environment variable is missing. Setup Firebase Admin SDK in standard settings if needed.");
+      // Try to initialize using ADC (Application Default Credentials)
+      initializeApp();
+      console.log("Firebase Admin Initialized Successfully using Application Default Credentials");
     }
   } catch (error) {
     console.error("Error initializing Firebase Admin:", error);
@@ -30,6 +32,20 @@ async function startServer() {
 
   // --- API Routes ---
   
+  app.get("/api/sales", async (req, res) => {
+    try {
+      if (!getApps().length) return res.status(500).json({ error: "Firebase Admin n'est pas configuré." });
+      const snap = await getFirestore().collectionGroup('sales').get();
+      const sales: any[] = [];
+      snap.forEach(doc => {
+        sales.push({ id: doc.id, refPath: doc.ref.path, ...doc.data() });
+      });
+      res.json(sales);
+    } catch (e: any) {
+      console.error("Error fetching all sales in admin:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
   app.get("/api/users", async (req, res) => {
     try {
       if (!getApps().length) return res.status(500).json({ error: "Firebase Admin n'est pas configuré." });
@@ -144,6 +160,181 @@ async function startServer() {
     } catch (error: any) {
       console.error("Error deleting user:", error);
       res.status(500).json({ error: error.message || "Erreur interne lors de la suppression" });
+    }
+  });
+
+  // Public booking fetch
+  app.get("/api/booking/:saleId", async (req, res) => {
+    try {
+      if (!getApps().length) return res.status(500).json({ error: "Firebase Admin n'est pas configuré." });
+      const { saleId } = req.params;
+      
+      const salesQuery = await getFirestore().collectionGroup('sales').get();
+      let foundDoc: any = null;
+      salesQuery.forEach(doc => {
+        if (doc.id === saleId) {
+          foundDoc = { id: doc.id, path: doc.ref.path, ...doc.data() };
+        }
+      });
+
+      if (!foundDoc) {
+        return res.status(404).json({ error: "Dossier de commande introuvable." });
+      }
+
+      const pathParts = foundDoc.path.split('/');
+      const usersIndex = pathParts.indexOf('users');
+      const ownerId = usersIndex !== -1 ? pathParts[usersIndex + 1] : null;
+
+      if (!ownerId) {
+        return res.status(400).json({ error: "Propriétaire du dossier introuvable." });
+      }
+
+      const configDoc = await getFirestore().collection('users').doc(ownerId).collection('settings').doc('delivery_config').get();
+      const config = configDoc.exists ? configDoc.data() : {
+        slots: ["09:00 - 10:30", "10:30 - 12:00", "14:00 - 15:30", "15:30 - 17:00"],
+        workingDays: [1, 2, 3, 4, 5],
+        dischargeText: "Je soussigné, [Client], certifie avoir pris livraison du véhicule [Marque] [Modèle] immatriculé [Plaque] (N° VIN : [VIN]) en parfait état et muni de tous ses documents administratifs."
+      };
+
+      const bookedSalesSnap = await getFirestore().collection('users').doc(ownerId).collection('sales').get();
+      const bookings: any[] = [];
+      bookedSalesSnap.forEach(doc => {
+        const data = doc.data();
+        if (data.deliveryDate && data.deliveryStatus === 'programmee') {
+          bookings.push({
+            date: data.deliveryDate,
+            slot: data.deliverySlot
+          });
+        }
+      });
+
+      res.json({
+        sale: {
+          id: foundDoc.id,
+          clientName: foundDoc.clientName,
+          marque: foundDoc.marque,
+          modele: foundDoc.modele,
+          plaque: foundDoc.plaque,
+          vin: foundDoc.vin,
+          company: foundDoc.company,
+          deliveryDate: foundDoc.deliveryDate,
+          deliverySlot: foundDoc.deliverySlot,
+          deliveryStatus: foundDoc.deliveryStatus
+        },
+        config,
+        bookings
+      });
+
+    } catch (e: any) {
+      console.error("Booking fetch error", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Public booking submit
+  app.post("/api/booking/:saleId", async (req, res) => {
+    try {
+      if (!getApps().length) return res.status(500).json({ error: "Firebase Admin n'est pas configuré." });
+      const { saleId } = req.params;
+      const { date, slot } = req.body;
+
+      if (!date || !slot) {
+        return res.status(400).json({ error: "Date et créneau requis." });
+      }
+
+      const salesQuery = await getFirestore().collectionGroup('sales').get();
+      let foundDoc: any = null;
+      salesQuery.forEach(doc => {
+        if (doc.id === saleId) {
+          foundDoc = { id: doc.id, path: doc.ref.path, ...doc.data() };
+        }
+      });
+
+      if (!foundDoc) {
+        return res.status(404).json({ error: "Dossier de commande introuvable." });
+      }
+
+      const pathParts = foundDoc.path.split('/');
+      const usersIndex = pathParts.indexOf('users');
+      const ownerId = usersIndex !== -1 ? pathParts[usersIndex + 1] : null;
+
+      if (!ownerId) {
+        return res.status(400).json({ error: "Propriétaire du dossier introuvable." });
+      }
+
+      // Check config limits and blocked periods
+      const configDoc = await getFirestore().collection('users').doc(ownerId).collection('settings').doc('delivery_config').get();
+      if (configDoc.exists) {
+        const configData = configDoc.data() || {};
+        
+        // 1. Check Blocked Periods
+        const blockedPeriods = configData.blockedPeriods || [];
+        const isBlocked = blockedPeriods.some((p: any) => {
+          if (!p.from || !p.to) return false;
+          return date >= p.from && date <= p.to;
+        });
+        if (isBlocked) {
+          return res.status(400).json({ error: "Cette période est temporairement bloquée pour les livraisons." });
+        }
+
+        // 1b. Check minDaysBeforeBooking
+        const minDays = configData.minDaysBeforeBooking || 0;
+        if (minDays > 0) {
+          const today = new Date();
+          const todayNormalized = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+          
+          const bookingDateParts = date.split('-'); // yyyy-mm-dd
+          const bookingDateNormalized = new Date(parseInt(bookingDateParts[0]), parseInt(bookingDateParts[1]) - 1, parseInt(bookingDateParts[2]));
+          
+          const diffTime = bookingDateNormalized.getTime() - todayNormalized.getTime();
+          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+          
+          if (diffDays < minDays) {
+            return res.status(400).json({ error: `Vous devez réserver au moins ${minDays} jour(s) à l'avance.` });
+          }
+        }
+
+        // 2. Check max deliveries limit
+        const maxLimit = configData.maxDeliveriesPerDay;
+        if (maxLimit && maxLimit > 0) {
+          const bookedSalesSnap = await getFirestore().collection('users').doc(ownerId).collection('sales').get();
+          let dayDeliveriesCount = 0;
+          bookedSalesSnap.forEach(doc => {
+            const data = doc.data();
+            // Count active deliveries on this date, excluding this sale itself if it is already programmed on this date
+            if (data.deliveryDate === date && data.deliveryStatus === 'programmee' && doc.id !== saleId) {
+              dayDeliveriesCount++;
+            }
+          });
+
+          if (dayDeliveriesCount >= maxLimit) {
+            return res.status(400).json({ error: "La limite maximale de livraisons pour cette date a été atteinte. Veuillez choisir une autre date." });
+          }
+        }
+      }
+
+      const docRef = getFirestore().doc(foundDoc.path);
+
+      const logEntry = {
+        user: "Client (Lien de réservation)",
+        action: `Créneau de livraison réservé pour le ${date} à ${slot}`,
+        timestamp: new Date().toISOString()
+      };
+
+      const existingLog = foundDoc.deliveryLog || [];
+
+      await docRef.update({
+        deliveryDate: date,
+        deliverySlot: slot,
+        deliveryStatus: 'programmee',
+        releaseStatus: 'programmee',
+        deliveryLog: [...existingLog, logEntry]
+      });
+
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Booking submit error", e);
+      res.status(500).json({ error: e.message });
     }
   });
 

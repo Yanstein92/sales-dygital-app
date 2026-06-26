@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, CheckCircle2, LogOut, Users, Edit2, Check, KeyRound, LayoutDashboard, Car, ShieldCheck, Activity, Menu, X, Trash2 } from 'lucide-react';
+import { Loader2, CheckCircle2, LogOut, Users, Edit2, Check, KeyRound, LayoutDashboard, Car, ShieldCheck, Activity, Menu, X, Trash2, TrendingUp, Calendar as CalendarIcon, Clock } from 'lucide-react';
 import { AppProvider, useApp } from './lib/context';
 import { auth, signOut, db, doc, setDoc, getUserDocPath } from './lib/firebase';
 import { CustomLogo } from './components/CustomLogo';
@@ -9,6 +9,10 @@ import { SaleDetail } from './components/SaleDetail';
 import { PdfValidation } from './components/PdfValidation';
 import { TeamManagement } from './components/TeamManagement';
 import { SuperAdmin } from './components/SuperAdmin';
+import { CompanyManagement } from './components/CompanyManagement';
+import { AdminPerformanceDashboard } from './components/AdminPerformanceDashboard';
+import { DeliveryCalendar } from './components/DeliveryCalendar';
+import { ClientBooking } from './components/ClientBooking';
 import { Sale } from './types';
 // PDF parsing logic pulled into helper to keep App clean
 const processPDFFile = async (
@@ -55,19 +59,63 @@ const processPDFFile = async (
     let clientName = [...new Set(nameParts)].join(' ').replace(/[-_]$/, '').trim() || 'Client inconnu';
 
     // Direct Extraction of Email & Phone
-    const emailMatch = fullText.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
-    const email = emailMatch ? emailMatch[1].trim() : '';
+    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/gi;
+    const allEmails = fullText.match(emailRegex) || [];
+    let email = '';
+    if (allEmails.length > 0) {
+      // Filter out emails containing company names or generic role-based mailboxes
+      const companyKeywords = ['kdb', 'djcar', 'dj-car', 'contact@', 'sales@', 'admin@', 'direction@', 'facturation@', 'info@', 'commercial@', 'support@', 'noreply@', 'no-reply@', 'billing@', 'garage@'];
+      const clientEmails = allEmails.filter(e => {
+        const lowerEmail = e.toLowerCase();
+        return !companyKeywords.some(kw => lowerEmail.includes(kw));
+      });
+      // Fallback to the first available email if all of them are company emails
+      email = clientEmails.length > 0 ? clientEmails[0].trim() : allEmails[0].trim();
+    }
 
     const phoneRegex = /(?:tél|téléphone|port|portable|gsm|tel)\s*[:\s.-]*(\+?\d[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2})/i;
     const phoneRegexAlt = /(?:\D|^)(0[1-9](?:[\s.-]?\d{2}){4})(?:\D|$)/;
     const phoneMatch = fullText.match(phoneRegex) || fullText.match(phoneRegexAlt);
     const phone = phoneMatch ? phoneMatch[1].replace(/[^0-9+]/g, '').trim() : '';
 
+    // Extraction de l'adresse, du code postal et de la ville
+    const addressRegex = /(?:adresse|demeurant|résidant|domicilié)\s*[:\s]+([A-Za-z0-9À-ÿ\s,'.()-]{5,150})(?=\s*(?:tél|téléphone|port|portable|gsm|email|courriel|bon|le|date|n°|$))/i;
+    const addressMatch = fullText.match(addressRegex);
+    let address = addressMatch ? addressMatch[1].trim() : '';
+
+    let zipCode = '';
+    let city = '';
+
+    if (address) {
+      const zipInAddress = address.match(/\b(\d{5})\b/);
+      if (zipInAddress) {
+        zipCode = zipInAddress[1];
+        const zipIdx = address.indexOf(zipCode);
+        const beforeZip = address.substring(0, zipIdx).trim().replace(/,$/, '').trim();
+        const afterZip = address.substring(zipIdx + 5).trim();
+        const cityParts = afterZip.match(/^([A-Za-zÀ-ÿ\s-]+)/);
+        if (cityParts) {
+          city = cityParts[1].trim();
+        }
+        if (beforeZip.length > 3) {
+          address = beforeZip;
+        }
+      }
+    } else {
+      const fallbackZipRegex = /\b((?:0[1-9]|[1-8]\d|9[0-5]|97[1-8]|98[4-9])\d{3})\b\s*([A-ZÀ-ÿ][A-ZÀ-ÿa-zÀ-ÿ\s-]+)/;
+      const fallbackZipMatch = fullText.match(fallbackZipRegex);
+      if (fallbackZipMatch) {
+        zipCode = fallbackZipMatch[1];
+        city = fallbackZipMatch[2].trim().split(/\s{2,}/)[0];
+      }
+    }
+
     const marque = (fullText.match(/Marque[\s",:]+(?:Marque[\s",:]+)?([A-Z]+)/i) || [])[1]?.trim() || '';
     const modele = (fullText.match(/Modèle[\s",:]+(?:Modèle[\s",:]+)?([A-Z\s0-9.-]+?)(?=\s*Version|\s*M\.E\.C|\s*Km|\s*Couleur|")/i) || [])[1]?.trim() || '';
     const color = (fullText.match(/Couleur[\s",:]+(?:Couleur[\s",:]+)?([A-Z\s]+?)(?=\s*Puiss|\s*1ère|\s*Immat|")/i) || [])[1]?.trim() || '';
     const plaque = (fullText.match(/Immat\.?[\s",:]+(?:Immat\.?[\s",:]+)?([A-Z0-9-]{7,9})/i) || [])[1] || '';
     const vin = (fullText.match(/VIN[\s",:]+(?:VIN[\s",:]+)?([A-Z0-9]{17})/i) || [])[1] || '';
+    const mec = (fullText.match(/M\.E\.C\.?\s*[:\s]*(\d{2}\/\d{2}\/\d{4})/i) || [])[1] || '';
 
     // Robust Vehicle Price Extraction with Cascading Fallbacks
     let price = 0;
@@ -120,13 +168,16 @@ const processPDFFile = async (
       bdcNumber: finalBdc, 
       company, 
       clientName, 
-      marque, modele, color, vin, plaque, 
+      marque, modele, color, vin, plaque, mec,
       price: price ? price.toString() : (existingSale ? existingSale.price.toString() : ''), 
       date: dateFormatted, 
       commercial: existingSale ? (existingSale.commercial || 'À assigner') : 'À assigner', 
       phone: phone || (existingSale ? (existingSale.phone || '') : ''), 
       email: email || (existingSale ? (existingSale.email || '') : ''), 
       ref: existingSale ? (existingSale.ref || '') : '', 
+      address: address || (existingSale ? ((existingSale as any).address || '') : ''),
+      zipCode: zipCode || (existingSale ? ((existingSale as any).zipCode || '') : ''),
+      city: city || (existingSale ? ((existingSale as any).city || '') : ''),
       draftPayments: extractedAcomptes
     });
     setCurrentView('pdf_validation');
@@ -152,6 +203,12 @@ const MainAppContent: React.FC = () => {
   const [isEditingCompany, setIsEditingCompany] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showManageCompanies, setShowManageCompanies] = useState(false);
+
+  const currentCompanyDetails = userProfile?.companiesDetails?.find(
+    c => c.name.toUpperCase() === userProfile?.companyId?.toUpperCase()
+  );
+  const companyLogo = currentCompanyDetails?.logoUrl;
 
   useEffect(() => {
     if (userProfile?.companyId) {
@@ -175,6 +232,14 @@ const MainAppContent: React.FC = () => {
         setCurrentView('detail');
       } else if (hash === '#pdf_validation') {
         setCurrentView('pdf_validation');
+      } else if (hash === '#delivery_calendar') {
+        setCurrentView('delivery_calendar');
+      } else if (hash === '#perf_dashboard') {
+        if (userProfile?.role === 'admin') {
+          setCurrentView('perf_dashboard');
+        } else {
+          window.location.hash = 'dashboard';
+        }
       } else {
         setSelectedSaleId(null);
         setCurrentView('dashboard');
@@ -186,12 +251,18 @@ const MainAppContent: React.FC = () => {
     // Initial sync
     if (window.location.hash) {
       handleHashChange();
-    } else {
-      window.location.hash = 'dashboard';
+    } else if (userProfile) {
+      if (userProfile.role === 'admin') {
+        window.location.hash = 'perf_dashboard';
+      } else if (userProfile.role === 'park_manager') {
+        window.location.hash = 'delivery_calendar';
+      } else {
+        window.location.hash = 'dashboard';
+      }
     }
 
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [userProfile]);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success', duration = 4000) => {
     setToast({ show: true, message, type });
@@ -426,29 +497,27 @@ const MainAppContent: React.FC = () => {
               <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Tableau de bord</div>
             </button>
 
+            <button 
+              onClick={() => window.location.hash = 'delivery_calendar'}
+              className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${currentView === 'delivery_calendar' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
+              title="Calendrier des sorties"
+            >
+              <CalendarIcon size={20} />
+              <span className="text-[9px] font-bold tracking-tight block md:hidden lg:block">Agenda</span>
+              <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Calendrier des sorties</div>
+            </button>
+
             {userProfile?.role === 'admin' && (
               <button 
-                onClick={() => setShowTeam(true)}
-                className="p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full text-slate-400 hover:text-white hover:bg-slate-900 transition-all group relative"
-                title="Équipe"
+                onClick={() => window.location.hash = 'perf_dashboard'}
+                className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${currentView === 'perf_dashboard' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
+                title="Performance"
               >
-                <Users size={20} />
-                <span className="text-[9px] font-bold tracking-tight block md:hidden lg:block">Équipe</span>
-                <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Gérer l'équipe</div>
+                <TrendingUp size={20} />
+                <span className="text-[9px] font-bold tracking-tight block md:hidden lg:block">Stats</span>
+                <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Performances</div>
               </button>
             )}
-
-            <a 
-              href="https://stats.uptimerobot.com/EjAcm5FoSR" 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full text-slate-400 hover:text-white hover:bg-slate-900 transition-all group relative text-center"
-              title="Statut"
-            >
-              <Activity size={20} className="text-emerald-500 animate-pulse" />
-              <span className="text-[9px] font-bold tracking-tight block md:hidden lg:block text-emerald-500">Statut</span>
-              <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">UptimeRobot</div>
-            </a>
           </nav>
         </div>
 
@@ -587,6 +656,17 @@ const MainAppContent: React.FC = () => {
                             <Users size={14} className="text-slate-500" />
                             <span>Gérer l'équipe</span>
                           </button>
+
+                          <button 
+                            onClick={() => {
+                              setShowProfileMenu(false);
+                              setShowManageCompanies(true);
+                            }}
+                            className="flex items-center gap-2 px-2.5 py-2 hover:bg-slate-50 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-bold transition-all text-left"
+                          >
+                            <Car size={14} className="text-slate-500" />
+                            <span>Gérer mes filiales</span>
+                          </button>
                         </>
                       )}
                     </div>
@@ -632,12 +712,16 @@ const MainAppContent: React.FC = () => {
                 <span>Sales Dygital</span>
                 <span>/</span>
                 <span className="text-slate-600 font-black">
-                  {currentView === 'dashboard' ? 'Bons de commande' : currentView === 'detail' ? 'Détails du dossier' : 'Validation' }
+                  {currentView === 'dashboard' ? 'Bons de commande' : currentView === 'detail' ? 'Détails du dossier' : currentView === 'delivery_calendar' ? 'Calendrier des sorties' : 'Validation' }
                 </span>
               </div>
               <div className="flex items-center gap-2 group mt-0.5">
-                <div className="w-5 h-5 rounded bg-slate-100 flex items-center justify-center border border-slate-200 text-[10px] font-black text-slate-600">
-                  {userProfile?.companyId?.charAt(0) || 'E'}
+                <div className="w-5 h-5 rounded bg-slate-100 flex items-center justify-center border border-slate-200 text-[10px] font-black text-slate-600 overflow-hidden shrink-0">
+                  {companyLogo ? (
+                    <img src={companyLogo} alt="Logo" className="w-full h-full object-contain" />
+                  ) : (
+                    userProfile?.companyId?.charAt(0) || 'E'
+                  )}
                 </div>
                 {isEditingCompany && userProfile?.role === 'admin' ? (
                   <form onSubmit={handleRenameCompany} className="flex items-center gap-1">
@@ -670,6 +754,20 @@ const MainAppContent: React.FC = () => {
 
           {/* Right actions & KPIs */}
           <div className="flex items-center gap-4">
+            {userProfile?.role === 'admin' && (
+              <button
+                onClick={() => window.location.hash = currentView === 'perf_dashboard' ? 'dashboard' : 'perf_dashboard'}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all duration-200 border shadow-sm cursor-pointer ${
+                  currentView === 'perf_dashboard'
+                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-indigo-600/20 hover:bg-indigo-500'
+                    : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700 hover:text-indigo-600'
+                }`}
+              >
+                <TrendingUp size={14} />
+                <span>{currentView === 'perf_dashboard' ? 'Voir Ventes' : 'Performances'}</span>
+              </button>
+            )}
+
             {/* Portefeuille actif KPI (Forte valeur ajoutée artisanale) */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-1.5 flex flex-col text-right shadow-inner">
               <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Portefeuille actif</span>
@@ -695,6 +793,7 @@ const MainAppContent: React.FC = () => {
 
         {showTeam && <TeamManagement onClose={() => setShowTeam(false)} onShowToast={showToast} />}
         {showSuperAdmin && <SuperAdmin onClose={() => setShowSuperAdmin(false)} onShowToast={showToast} />}
+        {showManageCompanies && <CompanyManagement onClose={() => setShowManageCompanies(false)} onShowToast={showToast} />}
 
         {/* FLUID WORKSPACE (No boxed max-width restrictions!) */}
         <main className="flex-1 overflow-y-auto bg-slate-50 p-6">
@@ -710,10 +809,16 @@ const MainAppContent: React.FC = () => {
                   onSelectSale={(id) => window.location.hash = `detail/${id}`} 
                   onProcessPdf={(f) => processPDFFile(f, sales, setDraftExtraction, (view) => window.location.hash = view, showToast, setIsLoading)}
                   onManualEntry={() => {
-                    setDraftExtraction({ isManual: true, bdcNumber: '', company: 'KDB AUTO', clientName: '', marque: '', modele: '', color: '', vin: '', plaque: '', price: '', date: new Date().toISOString().split('T')[0], commercial: 'À assigner', phone: '', email: '', ref: '', draftPayments: [] });
+                    setDraftExtraction({ isManual: true, bdcNumber: '', company: 'KDB AUTO', clientName: '', marque: '', modele: '', color: '', vin: '', plaque: '', mec: '', price: '', date: new Date().toISOString().split('T')[0], commercial: 'À assigner', phone: '', email: '', ref: '', address: '', zipCode: '', city: '', draftPayments: [] });
                     window.location.hash = 'pdf_validation';
                   }}
                 />
+              )}
+              {currentView === 'delivery_calendar' && (
+                <DeliveryCalendar onShowToast={showToast} />
+              )}
+              {currentView === 'perf_dashboard' && (
+                <AdminPerformanceDashboard onShowToast={showToast} />
               )}
               {currentView === 'detail' && selectedSaleId && (
                 <SaleDetail 
@@ -773,6 +878,25 @@ const MainAppContent: React.FC = () => {
 };
 
 export default function App() {
+  const [bookingId, setBookingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const checkHash = () => {
+      if (window.location.hash.startsWith('#reserve/')) {
+        setBookingId(window.location.hash.split('#reserve/')[1]);
+      } else {
+        setBookingId(null);
+      }
+    };
+    checkHash();
+    window.addEventListener('hashchange', checkHash);
+    return () => window.removeEventListener('hashchange', checkHash);
+  }, []);
+
+  if (bookingId) {
+    return <ClientBooking saleId={bookingId} onShowToast={(m, t) => console.log(m, t)} />;
+  }
+
   return (
     <AppProvider>
       <MainAppContent />

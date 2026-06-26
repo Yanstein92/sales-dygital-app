@@ -332,6 +332,13 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
               {sale.email && <span className="inline-flex items-center text-amber-700 bg-amber-100 px-3 py-1 rounded-full text-xs font-bold"><Mail size={14} className="mr-1.5" /> {sale.email}</span>}
               {sale.ref && <span className="inline-flex items-center text-blue-700 bg-blue-100 px-3 py-1 rounded-full text-xs font-bold"><Hash size={14} className="mr-1" /> Réf: {sale.ref}</span>}
             </div>
+            {((sale as any).address || (sale as any).zipCode || (sale as any).city) && (
+              <div className="mt-2.5 pl-9 flex flex-wrap items-center gap-1.5 text-slate-600 text-xs font-bold">
+                <span className="bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
+                  📍 {[(sale as any).address, (sale as any).zipCode, (sale as any).city].filter(Boolean).join(', ')}
+                </span>
+              </div>
+            )}
           </div>
           <div className="flex flex-col sm:items-end gap-2">
             <span className={`px-4 py-1.5 rounded-full text-sm font-black shadow-sm text-center ${sale.company === 'KDB AUTO' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>{sale.company}</span>
@@ -344,6 +351,7 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
             <table className="w-full text-sm">
               <tbody>
                 <tr className="border-b border-slate-100"><td className="py-4 px-6 font-bold text-slate-500 bg-slate-50 w-1/3">Véhicule</td><td className="py-4 px-6 font-black text-blue-900 text-base">{sale.marque} {sale.modele} <span className="text-xs text-slate-500 font-bold ml-1">({sale.color})</span></td></tr>
+                <tr className="border-b border-slate-100"><td className="py-4 px-6 font-bold text-slate-500 bg-slate-50">M.E.C / Année</td><td className="py-4 px-6 text-slate-800 font-bold text-sm">{(sale as any).mec || '-'}</td></tr>
                 <tr>
                   <td className="py-4 px-6 font-bold text-slate-500 bg-slate-50">Immat / VIN</td>
                   <td className="py-4 px-6 text-slate-800 font-mono text-sm font-bold flex flex-col gap-1">

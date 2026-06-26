@@ -15,6 +15,12 @@ export interface Payment {
   addedBy?: string; // Nom de l'utilisateur qui l'a ajouté
 }
 
+export interface DeliveryLogEntry {
+  user: string;
+  action: string;
+  timestamp: string;
+}
+
 export interface Sale {
   id: string;
   bdcNumber: string;
@@ -27,6 +33,7 @@ export interface Sale {
   color: string;
   vin: string;
   plaque: string;
+  mec?: string;
   price: number;
   transport?: number;
   date: string;
@@ -43,6 +50,26 @@ export interface Sale {
   refundDate?: string;
   refundMethod?: string;
   refundDetails?: string;
+
+  // Adresse et localisation
+  address?: string;
+  zipCode?: string;
+  city?: string;
+
+  // Champs de livraison & calendrier
+  deliveryDate?: string; // YYYY-MM-DD
+  deliverySlot?: string; // ex: "10:00 - 11:00"
+  deliveryStatus?: 'non_programmee' | 'programmee' | 'livre' | 'annule';
+  deliveryLog?: DeliveryLogEntry[];
+}
+
+export interface CompanyDetails {
+  name: string;
+  siret?: string;
+  address?: string;
+  logoUrl?: string;
+  email?: string;
+  phone?: string;
 }
 
 export interface UserProfile {
@@ -50,10 +77,12 @@ export interface UserProfile {
   email: string;
   companyId: string; // "KDB AUTO", "DJ CAR", etc. or a real ID
   adminUid?: string;
-  role: 'admin' | 'commercial';
+  role: 'admin' | 'commercial' | 'park_manager';
   name: string;
   testMode?: boolean;
   maxClients?: number;
+  companiesList?: string[];
+  companiesDetails?: CompanyDetails[];
 }
 
 export interface AppState {
