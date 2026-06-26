@@ -41,6 +41,57 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
     }
   };
 
+  const handleReleaseStatusChange = async (newStatus: 'non_sorti' | 'programmee' | 'sorti' | 'sorti_tpd') => {
+    if (newStatus === 'non_sorti') {
+      if (sale.deliveryStatus === 'programmee' || sale.deliveryStatus === 'livre') {
+        const isConfirmed = window.confirm(
+          "Le véhicule est planifié pour une livraison ou déjà marqué comme sorti. Confirmez-vous que le véhicule n'est pas réellement sorti afin de le remettre en parc ?"
+        );
+        if (!isConfirmed) return;
+
+        try {
+          const logEntry = {
+            user: userProfile?.name || 'Administrateur',
+            action: "Sortie ANNULÉE",
+            timestamp: new Date().toISOString()
+          };
+          const existingLog = sale.deliveryLog || [];
+          await setDoc(doc(db, getUserPath('sales', databaseUid), sale.id), {
+            releaseStatus: 'non_sorti',
+            deliveryStatus: 'annule',
+            deliveryLog: [...existingLog, logEntry]
+          }, { merge: true });
+          onShowToast("Véhicule remis en parc et livraison annulée.", "success");
+        } catch (err) {
+          onShowToast("Erreur lors de la remise en parc.", "error");
+        }
+        return;
+      }
+    }
+
+    if (newStatus === 'sorti' || newStatus === 'sorti_tpd') {
+      try {
+        const logEntry = {
+          user: userProfile?.name || 'Administrateur',
+          action: newStatus === 'sorti_tpd' ? "Marqué comme SORTI (TPD) depuis le dossier" : "Marqué comme SORTI depuis le dossier",
+          timestamp: new Date().toISOString()
+        };
+        const existingLog = sale.deliveryLog || [];
+        await setDoc(doc(db, getUserPath('sales', databaseUid), sale.id), {
+          releaseStatus: newStatus,
+          deliveryStatus: 'livre',
+          deliveryLog: [...existingLog, logEntry]
+        }, { merge: true });
+        onShowToast("Véhicule marqué comme sorti.", "success");
+      } catch (err) {
+        onShowToast("Erreur lors de la mise à jour.", "error");
+      }
+      return;
+    }
+
+    await handleUpdateField({ releaseStatus: newStatus });
+  };
+
   const handleApplyRefund = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -208,7 +259,7 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
                 : 'bg-white border-blue-200 text-blue-700 focus:ring-2 focus:ring-blue-500'
             }`}
             value={sale.releaseStatus || 'non_sorti'}
-            onChange={(e) => handleUpdateField({ releaseStatus: e.target.value as any })}
+            onChange={(e) => handleReleaseStatusChange(e.target.value as any)}
             disabled={!isPaid}
             title={!isPaid ? "Le véhicule doit être soldé pour gérer la sortie" : "Gestion de la sortie"}
           >

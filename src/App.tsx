@@ -476,7 +476,7 @@ const MainAppContent: React.FC = () => {
       <aside className="w-16 md:w-20 bg-slate-950 border-r border-slate-900 flex flex-col items-center py-6 justify-between text-white shrink-0 select-none z-30 shadow-2xl">
         <div className="flex flex-col items-center gap-8 w-full">
           {/* Logo brand */}
-          <div className="flex items-center justify-center cursor-pointer group" onClick={() => window.location.hash = 'dashboard'}>
+          <div className="flex items-center justify-center cursor-pointer group" onClick={() => { window.location.hash = 'dashboard'; }}>
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center shadow-lg shadow-blue-900/40 overflow-hidden ring-1 ring-white/10 relative transform group-hover:scale-105 transition-all">
               <CustomLogo className="w-6 h-6 text-white group-hover:rotate-12 transition-transform duration-300" />
             </div>
@@ -487,7 +487,7 @@ const MainAppContent: React.FC = () => {
           {/* Navigation Links */}
           <nav className="flex flex-col gap-4 w-full px-2">
             <button 
-              onClick={() => window.location.hash = 'dashboard'}
+              onClick={() => { window.location.hash = 'dashboard'; }}
               className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${currentView === 'dashboard' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
               title="Tableau de bord"
             >
@@ -498,7 +498,7 @@ const MainAppContent: React.FC = () => {
             </button>
 
             <button 
-              onClick={() => window.location.hash = 'delivery_calendar'}
+              onClick={() => { window.location.hash = 'delivery_calendar'; }}
               className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${currentView === 'delivery_calendar' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
               title="Calendrier des sorties"
             >
@@ -509,7 +509,7 @@ const MainAppContent: React.FC = () => {
 
             {userProfile?.role === 'admin' && (
               <button 
-                onClick={() => window.location.hash = 'perf_dashboard'}
+                onClick={() => { window.location.hash = 'perf_dashboard'; }}
                 className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${currentView === 'perf_dashboard' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
                 title="Performance"
               >

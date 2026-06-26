@@ -20,6 +20,7 @@ interface DeliveryConfig {
 
 export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast }) => {
   const { sales, userProfile, databaseUid } = useApp();
+  const canModifySortie = userProfile?.role === 'admin' || userProfile?.role === 'park_manager';
   
   // Navigation states
   const [activeTab, setActiveTab] = useState<'calendar' | 'config' | 'logs'>('calendar');
@@ -263,7 +264,7 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
   }, [invoicedSales, searchQueryToPlan]);
 
   // Filter active programmed deliveries for the selectedDate
-  const dayDeliveries = invoicedSales.filter(s => s.deliveryDate === selectedDate && s.deliveryStatus === 'programmee');
+  const dayDeliveries = invoicedSales.filter(s => s.deliveryDate === selectedDate && (s.deliveryStatus === 'programmee' || s.deliveryStatus === 'livre'));
 
   // Generate Calendar Days list
   const getDaysInMonth = (date: Date) => {
@@ -786,7 +787,7 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
             
             {/* Left Column: Vehicles to Program */}
             <div className="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 flex flex-col h-[calc(100vh-220px)] min-h-[450px]">
-              <div className="mb-4">
+              <div className="mb-4 text-slate-800">
                 <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
                   Véhicules à planifier ({pendingPlanificationSales.length})
@@ -873,23 +874,38 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
               </div>
             </div>
 
-            {/* Right Column: Calendar grid */}
-            <div className="lg:col-span-8 space-y-6">
-              
+            {/* Right Column: Calendar Grid */}
+            <div className="lg:col-span-8 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5">
               {/* Calendar Grid Controller */}
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5 pb-3 border-b border-slate-100">
-                  <div className="flex items-center gap-1">
-                    <h3 className="text-lg font-black text-slate-800 capitalize">
-                      {getHeaderTitle()}
-                    </h3>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-black text-slate-800 capitalize flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+                    {getHeaderTitle()}
+                  </h3>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-3">
+                  <button 
+                    onClick={handleTodayClick} 
+                    className="text-xs font-bold uppercase tracking-wider px-3.5 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-slate-700 transition-colors cursor-pointer"
+                  >
+                    Aujourd'hui
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => handlePeriodChange('prev')} 
+                      className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+
                     {/* View Switcher Toggle */}
-                    <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/60">
+                    <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/80">
                       <button 
                         onClick={() => setCalendarViewMode('day')}
-                        className={`text-[10px] uppercase tracking-wider font-extrabold px-3 py-1.5 rounded transition-all cursor-pointer ${
+                        className={`text-xs font-bold px-4 py-1.5 rounded-lg transition-all cursor-pointer ${
                           calendarViewMode === 'day' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                         }`}
                       >
@@ -897,7 +913,7 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                       </button>
                       <button 
                         onClick={() => setCalendarViewMode('week')}
-                        className={`text-[10px] uppercase tracking-wider font-extrabold px-3 py-1.5 rounded transition-all cursor-pointer ${
+                        className={`text-xs font-bold px-4 py-1.5 rounded-lg transition-all cursor-pointer ${
                           calendarViewMode === 'week' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                         }`}
                       >
@@ -905,7 +921,7 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                       </button>
                       <button 
                         onClick={() => setCalendarViewMode('month')}
-                        className={`text-[10px] uppercase tracking-wider font-extrabold px-3 py-1.5 rounded transition-all cursor-pointer ${
+                        className={`text-xs font-bold px-4 py-1.5 rounded-lg transition-all cursor-pointer ${
                           calendarViewMode === 'month' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                         }`}
                       >
@@ -913,134 +929,277 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                       </button>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <button 
-                        onClick={() => handlePeriodChange('prev')} 
-                        className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer"
-                      >
-                        <ChevronLeft size={18} />
-                      </button>
-                      <button 
-                        onClick={handleTodayClick} 
-                        className="text-xs font-bold px-2.5 py-1.5 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition-colors cursor-pointer"
-                      >
-                        Aujourd'hui
-                      </button>
-                      <button 
-                        onClick={() => handlePeriodChange('next')} 
-                        className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer"
-                      >
-                        <ChevronRight size={18} />
-                      </button>
-                    </div>
+                    <button 
+                      onClick={() => handlePeriodChange('next')} 
+                      className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
                   </div>
                 </div>
+              </div>
 
-                {/* Month view headers */}
+              {/* Calendar Grid Area */}
+              <div className="mt-6">
                 {calendarViewMode === 'month' && (
-                  <div className="grid grid-cols-7 gap-1 text-center font-black text-[10px] text-slate-400 uppercase tracking-widest mb-2">
-                    <span>Lun</span>
-                    <span>Mar</span>
-                    <span>Mer</span>
-                    <span>Jeu</span>
-                    <span>Ven</span>
-                    <span>Sam</span>
-                    <span>Dim</span>
+                  <div>
+                    {/* Month view headers */}
+                    <div className="grid grid-cols-7 gap-2.5 text-center font-bold text-xs text-slate-400 uppercase tracking-wider mb-3">
+                      <span>Lun</span>
+                      <span>Mar</span>
+                      <span>Mer</span>
+                      <span>Jeu</span>
+                      <span>Ven</span>
+                      <span>Sam</span>
+                      <span>Dim</span>
+                    </div>
+
+                    {/* Day Grid */}
+                    <div className="grid grid-cols-7 gap-2">
+                      {calendarDays.map((cell, idx) => {
+                        const dateKey = formatDateKey(cell.date);
+                        const isSelected = selectedDate === dateKey;
+                        const isToday = formatDateKey(new Date()) === dateKey;
+                        
+                        // Filter deliveries scheduled for this cell day
+                        const cellDeliveries = (sales || []).filter(s => s.deliveryDate === dateKey && (s.deliveryStatus === 'programmee' || s.deliveryStatus === 'livre'));
+
+                        const isBlockedDate = (config.blockedPeriods || []).some(
+                          p => dateKey >= p.from && dateKey <= p.to
+                        );
+
+                        return (
+                          <button
+                            key={idx}
+                            onClick={() => setSelectedDate(dateKey)}
+                            onDragOver={(e) => {
+                              if (!isBlockedDate) {
+                                e.preventDefault();
+                              }
+                            }}
+                            onDrop={(e) => {
+                              if (!isBlockedDate) {
+                                const saleId = e.dataTransfer.getData("text/plain");
+                                handleDropOnCell(saleId, dateKey);
+                              }
+                            }}
+                            className="h-24 p-2.5 rounded-xl border flex flex-col justify-between items-start transition-all cursor-pointer relative border-slate-100 hover:border-slate-300 hover:bg-slate-50/40 bg-white"
+                            style={{
+                              borderColor: isSelected ? '#2563eb' : undefined,
+                              borderWidth: isSelected ? '2px' : '1px',
+                              boxShadow: isSelected ? '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' : undefined,
+                              backgroundColor: isBlockedDate ? 'rgba(239, 68, 68, 0.03)' : !cell.isCurrentMonth ? 'rgba(248, 250, 252, 0.5)' : undefined
+                            }}
+                          >
+                            <div className="flex justify-between items-center w-full">
+                              <span className={`text-xs font-black px-1.5 py-0.5 rounded-md ${
+                                isToday ? 'bg-blue-600 text-white' : 'text-slate-700'
+                              }`}>
+                                {cell.date.getDate()}
+                              </span>
+                              
+                              {isBlockedDate && (
+                                <span className="text-[8px] bg-red-100 text-red-800 px-1 py-0.5 rounded font-black uppercase tracking-wider scale-90" title="Période de livraison bloquée">Bloqué</span>
+                              )}
+                              {!isBlockedDate && cellDeliveries.length > 0 && (
+                                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-scale-up" title={`${cellDeliveries.length} livraison(s)`}></span>
+                              )}
+                            </div>
+
+                            {/* Miniature display of deliveries */}
+                            <div className="w-full mt-1.5 overflow-hidden space-y-1 text-left shrink-0">
+                              {cellDeliveries.slice(0, 2).map(delivery => {
+                                const isLivre = delivery.deliveryStatus === 'livre';
+                                return (
+                                  <div 
+                                    key={delivery.id} 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setViewingVehicleSale(delivery);
+                                    }}
+                                    className={`text-[9px] border font-extrabold truncate px-1.5 rounded-md py-0.5 leading-none cursor-pointer ${
+                                      isLivre 
+                                        ? 'bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-600 border-slate-200' 
+                                        : 'bg-blue-50 hover:bg-blue-100 text-blue-900 hover:text-blue-950 border-blue-100'
+                                    }`}
+                                    title={isLivre ? "Livré (Historique) - Cliquer pour détails" : "Cliquer pour voir les détails de la sortie"}
+                                  >
+                                    {delivery.marque} {delivery.modele}
+                                  </div>
+                                );
+                              })}
+                              {cellDeliveries.length > 2 && (
+                                <div className="text-[8px] font-bold text-slate-400 pl-1">+{cellDeliveries.length - 2} autres</div>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
-                {/* Day Grid / Week Grid / Day Grid depending on view mode */}
-                {calendarViewMode === 'month' && (
-                  <div className="grid grid-cols-7 gap-1.5">
-                    {calendarDays.map((cell, idx) => {
-                      const dateKey = formatDateKey(cell.date);
-                      const isSelected = selectedDate === dateKey;
-                      const isToday = formatDateKey(new Date()) === dateKey;
-                      
-                      // Filter deliveries scheduled for this cell day
-                      const cellDeliveries = (sales || []).filter(s => s.deliveryDate === dateKey && s.deliveryStatus === 'programmee');
+                {/* Selected Date Details Panel (Only shown in Month View for selected date) */}
+                {calendarViewMode === 'month' && selectedDate && (
+                  <div className="mt-6 bg-slate-50/50 rounded-2xl border border-slate-100 p-5 animate-fade-in-up">
+                    <div className="flex justify-between items-center border-b border-slate-200/60 pb-3 mb-4">
+                      <div>
+                        <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5">
+                          📅 Rendez-vous du {new Date(selectedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-1">Créneaux horaires de livraison pour cette journée.</p>
+                      </div>
+                      <span className="bg-blue-100 text-blue-800 font-black text-xs px-3 py-1 rounded-full">
+                        {dayDeliveries.length} livraison(s) programmée(s)
+                      </span>
+                    </div>
 
-                      const isBlockedDate = (config.blockedPeriods || []).some(
-                        p => dateKey >= p.from && dateKey <= p.to
-                      );
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {config.slots.map(slot => {
+                        const activeDelivery = (sales || []).find(s => s.deliveryDate === selectedDate && s.deliverySlot === slot && (s.deliveryStatus === 'programmee' || s.deliveryStatus === 'livre'));
+                        const isLivre = activeDelivery?.deliveryStatus === 'livre';
+                        
+                        return (
+                          <div key={slot} className={`border rounded-xl p-4 flex flex-col justify-between gap-3 transition-all ${
+                            activeDelivery 
+                              ? isLivre 
+                                ? 'border-slate-200 bg-slate-50/70 shadow-none opacity-80' 
+                                : 'border-blue-200 bg-blue-50/30 shadow-md' 
+                              : 'border-slate-100 bg-white hover:bg-slate-50/30'
+                          }`}>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black text-slate-400 tracking-wider uppercase">{slot}</span>
+                              {activeDelivery ? (
+                                isLivre ? (
+                                  <span className="text-[10px] bg-slate-200 text-slate-600 font-black px-2 py-0.5 rounded-full uppercase">Sorti</span>
+                                ) : (
+                                  <span className="text-[10px] bg-blue-150 text-blue-800 font-black px-2 py-0.5 rounded-full uppercase">Occupé</span>
+                                )
+                              ) : (
+                                <span className="text-[10px] bg-slate-100 text-slate-500 font-bold px-2 py-0.5 rounded-full uppercase">Libre</span>
+                              )}
+                            </div>
 
-                      return (
-                        <button
-                          key={idx}
-                          onClick={() => setSelectedDate(dateKey)}
-                          onDragOver={(e) => {
-                            if (!isBlockedDate) {
-                              e.preventDefault();
-                            }
-                          }}
-                          onDrop={(e) => {
-                            if (!isBlockedDate) {
-                              const saleId = e.dataTransfer.getData("text/plain");
-                              handleDropOnCell(saleId, dateKey);
-                            }
-                          }}
-                          className="h-20 p-1.5 rounded-xl border flex flex-col justify-between items-start transition-all cursor-pointer relative border-slate-100 hover:border-slate-300 hover:bg-slate-50/40 bg-white"
-                          style={{
-                            borderColor: isSelected ? '#2563eb' : undefined,
-                            boxShadow: isSelected ? '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' : undefined,
-                            backgroundColor: isBlockedDate ? 'rgba(239, 68, 68, 0.03)' : !cell.isCurrentMonth ? 'rgba(248, 250, 252, 0.5)' : undefined
-                          }}
-                        >
-                          <div className="flex justify-between items-center w-full">
-                            <span className={`text-xs font-black px-1.5 py-0.5 rounded-md ${
-                              isToday ? 'bg-blue-600 text-white' : 'text-slate-700'
-                            }`}>
-                              {cell.date.getDate()}
-                            </span>
-                            
-                            {isBlockedDate && (
-                              <span className="text-[8px] bg-red-100 text-red-800 px-1 py-0.5 rounded font-black uppercase tracking-wider scale-90" title="Période de livraison bloquée">Bloqué</span>
-                            )}
-                            {!isBlockedDate && cellDeliveries.length > 0 && (
-                              <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-scale-up" title={`${cellDeliveries.length} livraison(s)`}></span>
-                            )}
-                          </div>
+                            {activeDelivery ? (
+                              <div className="space-y-3">
+                                <div 
+                                  onClick={() => setViewingVehicleSale(activeDelivery)}
+                                  className="cursor-pointer hover:bg-slate-100/50 p-1.5 rounded-lg transition-colors"
+                                >
+                                  <h5 className={`font-extrabold text-sm truncate ${isLivre ? 'text-slate-500 line-through' : 'text-slate-800'}`}>{activeDelivery.marque} {activeDelivery.modele}</h5>
+                                  <p className="text-xs text-slate-500 mt-0.5 truncate">Client: {activeDelivery.clientName}</p>
+                                  {activeDelivery.plaque && (
+                                    <span className={`inline-block mt-2 text-[10px] font-mono font-black border rounded px-2 py-0.5 ${
+                                      isLivre 
+                                        ? 'text-slate-500 bg-slate-100 border-slate-200' 
+                                        : 'text-blue-600 bg-blue-50 border-blue-100'
+                                    }`}>{activeDelivery.plaque}</span>
+                                  )}
+                                </div>
 
-                          {/* Miniature display of deliveries */}
-                          <div className="w-full mt-1 overflow-hidden space-y-0.5 text-left shrink-0">
-                            {cellDeliveries.slice(0, 2).map(delivery => (
-                              <div 
-                                key={delivery.id} 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setViewingVehicleSale(delivery);
-                                }}
-                                className="text-[9px] bg-blue-50 hover:bg-blue-100 text-blue-900 hover:text-blue-950 border border-blue-100 font-extrabold truncate px-1 rounded-md py-0.5 leading-none cursor-pointer"
-                                title="Cliquer pour voir les détails de la sortie"
-                              >
-                                {delivery.marque} {delivery.modele}
+                                <div className="flex items-center gap-1.5 justify-end pt-2 border-t border-slate-200/50">
+                                  {/* Discharge printing is always accessible */}
+                                  <button 
+                                    onClick={() => openDischargeModal(activeDelivery)}
+                                    className="p-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg transition-colors cursor-pointer"
+                                    title="Imprimer décharge de responsabilité"
+                                  >
+                                    <Printer size={14} />
+                                  </button>
+
+                                  {/* Green button named "Sortir" replaces the small green check icon button, shown only if not yet delivered */}
+                                  {!isLivre && (
+                                    <button 
+                                      onClick={() => handleMarkAsDelivered(activeDelivery)}
+                                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-sm"
+                                      title="Valider la sortie du véhicule"
+                                    >
+                                      <Check size={14} /> Sortir
+                                    </button>
+                                  )}
+
+                                  {/* If delivered/sortie: modifications limited to admin/park_manager */}
+                                  {isLivre ? (
+                                    canModifySortie ? (
+                                      <>
+                                        <button 
+                                          onClick={() => {
+                                            setIsPlanningSale(activeDelivery);
+                                            setPlanningSlot(activeDelivery.deliverySlot || slot);
+                                            setSelectedDate(activeDelivery.deliveryDate || selectedDate);
+                                          }}
+                                          className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg border border-blue-200 transition-colors cursor-pointer"
+                                          title="Reprogrammer"
+                                        >
+                                          <CalendarIcon size={14} />
+                                        </button>
+                                        <button 
+                                          onClick={() => handleCancelDelivery(activeDelivery)}
+                                          className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg border border-red-100 transition-colors cursor-pointer"
+                                          title="Annuler rendez-vous"
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400 font-bold italic block text-right">
+                                        Modifs restreintes (Admin)
+                                      </span>
+                                    )
+                                  ) : (
+                                    /* If not delivered, normal modification buttons are visible to all authorized */
+                                    <>
+                                      <button 
+                                        onClick={() => {
+                                          setIsPlanningSale(activeDelivery);
+                                          setPlanningSlot(activeDelivery.deliverySlot || slot);
+                                          setSelectedDate(activeDelivery.deliveryDate || selectedDate);
+                                        }}
+                                        className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg border border-blue-200 transition-colors cursor-pointer"
+                                        title="Reprogrammer"
+                                      >
+                                        <CalendarIcon size={14} />
+                                      </button>
+                                      <button 
+                                        onClick={() => handleCancelDelivery(activeDelivery)}
+                                        className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg border border-red-100 transition-colors cursor-pointer"
+                                        title="Annuler rendez-vous"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
                               </div>
-                            ))}
-                            {cellDeliveries.length > 2 && (
-                              <div className="text-[8px] font-bold text-slate-400 pl-1">+{cellDeliveries.length - 2} autres</div>
+                            ) : (
+                              <button 
+                                onClick={() => setIsAssigningForSlot({ date: selectedDate, slot: slot })}
+                                className="w-full text-center text-xs text-slate-500 hover:text-blue-600 font-bold py-2 border border-dashed border-slate-200 hover:border-blue-300 hover:bg-blue-50/20 rounded-xl transition-all cursor-pointer"
+                              >
+                                + Assigner un véhicule
+                              </button>
                             )}
                           </div>
-                        </button>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
-                {/* Week View Timetable */}
                 {calendarViewMode === 'week' && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[750px] border-collapse text-left border border-slate-100 rounded-xl overflow-hidden shadow-sm">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-100">
-                          <th className="py-3 px-3 text-[10px] font-black text-slate-400 uppercase tracking-widest w-28 bg-slate-50/80">Créneaux</th>
+                  <div className="h-full overflow-auto border border-slate-150 rounded-lg shadow-sm bg-white">
+                    <table className="w-full min-w-[700px] border-collapse text-left">
+                      <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-200">
+                        <tr>
+                          <th className="py-2 px-2.5 text-[9px] font-black text-slate-400 uppercase tracking-widest w-24 bg-slate-50">Créneaux</th>
                           {calendarDays.map((cell, idx) => {
                             const isToday = formatDateKey(new Date()) === formatDateKey(cell.date);
                             return (
-                              <th key={idx} className="py-3 px-3 text-center border-l border-slate-100 w-32">
-                                <div className={`text-[10px] font-black tracking-wider uppercase ${isToday ? 'text-blue-600' : 'text-slate-500'}`}>
+                              <th key={idx} className="py-2 px-2 text-center border-l border-slate-150 w-28">
+                                <div className={`text-[9px] font-black tracking-wider uppercase leading-none ${isToday ? 'text-blue-600' : 'text-slate-500'}`}>
                                   {cell.date.toLocaleDateString('fr-FR', { weekday: 'short' })}
                                 </div>
-                                <div className={`text-[11px] font-bold mt-0.5 ${isToday ? 'text-blue-600 font-black' : 'text-slate-400'}`}>
+                                <div className={`text-[10px] font-bold mt-0.5 leading-none ${isToday ? 'text-blue-600 font-black' : 'text-slate-400'}`}>
                                   {cell.date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
                                 </div>
                               </th>
@@ -1051,10 +1210,10 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                       <tbody>
                         {config.slots.map((slot) => (
                           <tr key={slot} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/10">
-                            <td className="py-4 px-2.5 text-[11px] font-black text-slate-600 bg-slate-50/40 align-middle border-r border-slate-100">
-                              <div className="flex items-center gap-1.5">
-                                <Clock size={12} className="text-slate-400 shrink-0" />
-                                <span className="leading-tight">{slot}</span>
+                            <td className="py-2 px-2 text-[10px] font-black text-slate-600 bg-slate-50/40 align-middle border-r border-slate-150">
+                              <div className="flex items-center gap-1">
+                                <Clock size={11} className="text-slate-400 shrink-0" />
+                                <span className="leading-none">{slot}</span>
                               </div>
                             </td>
                             {calendarDays.map((cell, idx) => {
@@ -1062,8 +1221,9 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                               
                               // Filter active delivery for this day and slot
                               const activeDelivery = (sales || []).find(
-                                s => s.deliveryDate === dateKey && s.deliverySlot === slot && s.deliveryStatus === 'programmee'
+                                s => s.deliveryDate === dateKey && s.deliverySlot === slot && (s.deliveryStatus === 'programmee' || s.deliveryStatus === 'livre')
                               );
+                              const isLivre = activeDelivery?.deliveryStatus === 'livre';
 
                               const isBlockedDate = (config.blockedPeriods || []).some(
                                 p => dateKey >= p.from && dateKey <= p.to
@@ -1076,72 +1236,103 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                               const isDisabled = isBlockedDate || !isWorkingDay;
 
                               return (
-                                <td key={idx} className="p-2 border-l border-slate-100 align-top min-h-[90px]">
+                                <td key={idx} className="p-1 border-l border-slate-100 align-top">
                                   {isDisabled ? (
-                                    <div className="h-full flex items-center justify-center bg-slate-50/70 rounded-lg border border-dashed border-slate-100 p-2 min-h-[75px]" title={isBlockedDate ? 'Période de fermeture / congés' : 'Jour non ouvré'}>
-                                      <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">
+                                    <div className="h-full flex items-center justify-center bg-slate-50/70 rounded-lg border border-dashed border-slate-100 p-1.5 min-h-[50px]" title={isBlockedDate ? 'Période de fermeture / congés' : 'Jour non ouvré'}>
+                                      <span className="text-[8px] font-black uppercase text-slate-400 tracking-wider">
                                         {isBlockedDate ? 'Bloqué' : 'Fermé'}
                                       </span>
                                     </div>
                                   ) : activeDelivery ? (
-                                    <div className="bg-blue-50/90 border border-blue-100 hover:border-blue-200 hover:bg-blue-50 rounded-xl p-2 flex flex-col justify-between min-h-[85px] shadow-sm relative group/card transition-all">
+                                    <div className={`border rounded-lg p-1.5 flex flex-col justify-between min-h-[55px] shadow-sm relative group/card transition-all ${
+                                      isLivre 
+                                        ? 'bg-slate-100 text-slate-500 border-slate-200' 
+                                        : 'bg-blue-50/90 border border-blue-100 hover:border-blue-200 hover:bg-blue-50'
+                                    }`}>
                                       <div>
-                                        <div className="text-[10px] font-black text-blue-900 truncate uppercase leading-none mb-1" title={activeDelivery.clientName}>
+                                        <div className={`text-[9px] font-black truncate uppercase leading-none mb-0.5 ${isLivre ? 'text-slate-500 line-through' : 'text-blue-900'}`} title={activeDelivery.clientName}>
                                           {activeDelivery.clientName}
                                         </div>
-                                        <div className="text-[9px] font-extrabold text-blue-700 truncate leading-none mb-1" title={`${activeDelivery.marque} ${activeDelivery.modele}`}>
+                                        <div className={`text-[8px] font-extrabold truncate leading-none mb-0.5 ${isLivre ? 'text-slate-400' : 'text-blue-700'}`} title={`${activeDelivery.marque} ${activeDelivery.modele}`}>
                                           {activeDelivery.marque} {activeDelivery.modele}
                                         </div>
-                                        {activeDelivery.plaque && (
-                                          <div className="text-[8px] font-mono font-black text-blue-600 uppercase bg-blue-100/40 border border-blue-100/50 rounded px-1 py-0.5 inline-block leading-none">
-                                            {activeDelivery.plaque}
-                                          </div>
-                                        )}
                                       </div>
                                       
                                       {/* Compact Actions Menu */}
-                                      <div className="flex items-center justify-end gap-1 mt-2 pt-1.5 border-t border-blue-100/30">
+                                      <div className="flex items-center justify-end gap-0.5 mt-1 pt-1 border-t border-blue-100/30 shrink-0">
                                         <button
                                           onClick={() => setViewingVehicleSale(activeDelivery)}
-                                          className="p-1 hover:bg-blue-200/60 rounded text-blue-800 transition-colors cursor-pointer"
+                                          className={`p-0.5 rounded transition-colors cursor-pointer ${isLivre ? 'hover:bg-slate-250 text-slate-500' : 'hover:bg-blue-200/60 text-blue-800'}`}
                                           title="Consulter"
                                         >
-                                          <Info size={11} />
+                                          <Info size={10} />
                                         </button>
-                                        <button
-                                          onClick={() => handleMarkAsDelivered(activeDelivery)}
-                                          className="p-1 hover:bg-emerald-200/60 rounded text-emerald-800 transition-colors cursor-pointer"
-                                          title="Sortie effectuée"
-                                        >
-                                          <Check size={11} />
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            setIsPlanningSale(activeDelivery);
-                                            setPlanningSlot(activeDelivery.deliverySlot || slot);
-                                            setSelectedDate(activeDelivery.deliveryDate || dateKey);
-                                          }}
-                                          className="p-1 hover:bg-blue-200/60 rounded text-blue-800 transition-colors cursor-pointer"
-                                          title="Reprogrammer"
-                                        >
-                                          <CalendarIcon size={11} />
-                                        </button>
-                                        <button
-                                          onClick={() => handleCancelDelivery(activeDelivery)}
-                                          className="p-1 hover:bg-red-100 hover:text-red-800 rounded text-red-500 transition-colors cursor-pointer"
-                                          title="Annuler RDV"
-                                        >
-                                          <Trash2 size={11} />
-                                        </button>
+                                        
+                                        {/* Sortir check button shown only if not delivered */}
+                                        {!isLivre && (
+                                          <button
+                                            onClick={() => handleMarkAsDelivered(activeDelivery)}
+                                            className="p-0.5 hover:bg-emerald-200/60 rounded text-emerald-800 transition-colors cursor-pointer"
+                                            title="Sortie effectuée (Sortir)"
+                                          >
+                                            <Check size={10} />
+                                          </button>
+                                        )}
+
+                                        {isLivre ? (
+                                          canModifySortie && (
+                                            <>
+                                              <button
+                                                onClick={() => {
+                                                  setIsPlanningSale(activeDelivery);
+                                                  setPlanningSlot(activeDelivery.deliverySlot || slot);
+                                                  setSelectedDate(activeDelivery.deliveryDate || dateKey);
+                                                }}
+                                                className="p-0.5 hover:bg-blue-200/60 rounded text-blue-800 transition-colors cursor-pointer"
+                                                title="Reprogrammer"
+                                              >
+                                                <CalendarIcon size={10} />
+                                              </button>
+                                              <button
+                                                onClick={() => handleCancelDelivery(activeDelivery)}
+                                                className="p-0.5 hover:bg-red-100 hover:text-red-800 rounded text-red-500 transition-colors cursor-pointer"
+                                                title="Annuler RDV"
+                                              >
+                                                <Trash2 size={10} />
+                                              </button>
+                                            </>
+                                          )
+                                        ) : (
+                                          <>
+                                            <button
+                                              onClick={() => {
+                                                setIsPlanningSale(activeDelivery);
+                                                setPlanningSlot(activeDelivery.deliverySlot || slot);
+                                                setSelectedDate(activeDelivery.deliveryDate || dateKey);
+                                              }}
+                                              className="p-0.5 hover:bg-blue-200/60 rounded text-blue-800 transition-colors cursor-pointer"
+                                              title="Reprogrammer"
+                                            >
+                                              <CalendarIcon size={10} />
+                                            </button>
+                                            <button
+                                              onClick={() => handleCancelDelivery(activeDelivery)}
+                                              className="p-0.5 hover:bg-red-100 hover:text-red-800 rounded text-red-500 transition-colors cursor-pointer"
+                                              title="Annuler RDV"
+                                            >
+                                              <Trash2 size={10} />
+                                            </button>
+                                          </>
+                                        )}
                                       </div>
                                     </div>
                                   ) : (
                                     <button
                                       onClick={() => setIsAssigningForSlot({ date: dateKey, slot: slot })}
-                                      className="w-full h-full min-h-[85px] flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 hover:border-blue-400 hover:bg-blue-50/10 text-slate-300 hover:text-blue-600 transition-all cursor-pointer group p-2"
+                                      className="w-full h-full min-h-[50px] flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 hover:border-blue-400 hover:bg-blue-50/10 text-slate-300 hover:text-blue-600 transition-all cursor-pointer group p-1"
                                     >
-                                      <Plus size={16} className="group-hover:scale-110 transition-transform text-slate-300 group-hover:text-blue-500" />
-                                      <span className="text-[8px] font-black uppercase tracking-wider mt-1 text-slate-400 group-hover:text-blue-600">Assigner</span>
+                                      <Plus size={11} className="group-hover:scale-110 transition-transform text-slate-300 group-hover:text-blue-500" />
+                                      <span className="text-[7px] font-black uppercase tracking-wider mt-0.5 text-slate-400 group-hover:text-blue-600">Assigner</span>
                                     </button>
                                   )}
                                 </td>
@@ -1154,14 +1345,14 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                   </div>
                 )}
 
-                {/* Day View Timetable */}
                 {calendarViewMode === 'day' && (
-                  <div className="space-y-3">
+                  <div className="space-y-2 h-full overflow-y-auto">
                     {config.slots.map((slot) => {
                       const dateKey = selectedDate;
                       const activeDelivery = (sales || []).find(
-                        s => s.deliveryDate === dateKey && s.deliverySlot === slot && s.deliveryStatus === 'programmee'
+                        s => s.deliveryDate === dateKey && s.deliverySlot === slot && (s.deliveryStatus === 'programmee' || s.deliveryStatus === 'livre')
                       );
+                      const isLivre = activeDelivery?.deliveryStatus === 'livre';
                       
                       const isBlockedDate = (config.blockedPeriods || []).some(
                         p => dateKey >= p.from && dateKey <= p.to
@@ -1176,97 +1367,125 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                       return (
                         <div 
                           key={slot} 
-                          className={`border rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
+                          className={`border rounded-lg p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all ${
                             isDisabled 
                             ? 'bg-slate-50/50 border-slate-200 opacity-75' 
                             : activeDelivery 
-                              ? 'border-blue-200 bg-blue-50/20' 
+                              ? isLivre 
+                                ? 'border-slate-200 bg-slate-100/55 opacity-80'
+                                : 'border-blue-200 bg-blue-50/20' 
                               : 'border-slate-100 bg-slate-50/20 hover:bg-slate-50'
                           }`}
                         >
-                          <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold ${
                               isDisabled 
                               ? 'bg-slate-200 text-slate-400' 
                               : activeDelivery 
-                                ? 'bg-blue-600 text-white shadow-md' 
+                                ? isLivre 
+                                  ? 'bg-slate-400 text-white'
+                                  : 'bg-blue-600 text-white shadow-sm' 
                                 : 'bg-slate-100 text-slate-400'
                             }`}>
-                              <Clock size={18} />
+                              <Clock size={14} />
                             </div>
                             <div>
-                              <span className="text-xs font-black text-slate-400 tracking-wider uppercase block">{slot}</span>
+                              <span className="text-[9px] font-black text-slate-400 tracking-wider uppercase block">{slot}</span>
                               {isDisabled ? (
-                                <span className="font-extrabold text-slate-400 text-sm">
+                                <span className="font-extrabold text-slate-400 text-xs">
                                   {isBlockedDate ? 'Indisponible (Période bloquée)' : 'Fermé (Jour non ouvré)'}
                                 </span>
                               ) : activeDelivery ? (
-                                <span className="font-extrabold text-blue-900 text-sm">Occupé • {activeDelivery.clientName}</span>
+                                <span className={`font-extrabold text-xs ${isLivre ? 'text-slate-500 line-through' : 'text-blue-900'}`}>
+                                  {isLivre ? 'Livré (Historique)' : 'Occupé'} • {activeDelivery.clientName}
+                                </span>
                               ) : (
-                                <span className="text-slate-400 font-bold text-sm">Disponible</span>
+                                <span className="text-slate-400 font-bold text-xs">Disponible</span>
                               )}
                             </div>
                           </div>
 
                           {!isDisabled && (
                             activeDelivery ? (
-                              <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                              <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
                                 <button
                                   onClick={() => { setViewingVehicleSale(activeDelivery); }}
-                                  className="text-left bg-white border border-blue-200 hover:border-blue-400 p-2.5 rounded-xl shadow-sm hover:shadow-md transition-all group flex flex-col gap-1 shrink-0 cursor-pointer"
-                                  title="Cliquer pour afficher les détails du véhicule"
+                                  className={`text-left bg-white border p-2 rounded-lg shadow-sm hover:shadow-md transition-all group flex flex-col gap-0.5 shrink-0 cursor-pointer ${
+                                    isLivre ? 'border-slate-200' : 'border-blue-200 hover:border-blue-400'
+                                  }`}
                                 >
-                                  <div className="flex items-center gap-1.5 font-extrabold text-blue-900 group-hover:text-blue-600 transition-colors text-xs">
-                                    <Car size={13} className="text-blue-500" />
+                                  <div className={`flex items-center gap-1 font-extrabold group-hover:text-blue-600 transition-colors text-[11px] ${isLivre ? 'text-slate-500 line-through' : 'text-blue-900'}`}>
+                                    <Car size={11} className={isLivre ? 'text-slate-400' : 'text-blue-500'} />
                                     <span>{activeDelivery.marque} {activeDelivery.modele}</span>
                                   </div>
-                                  <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 font-bold font-mono">
-                                    {activeDelivery.plaque ? (
-                                      <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-700">Immat: {activeDelivery.plaque}</span>
-                                    ) : (
-                                      <span className="bg-slate-50 border border-slate-150 px-1.5 py-0.5 rounded text-slate-400 italic">Sans plaque</span>
-                                    )}
-                                    {activeDelivery.vin && (
-                                      <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-700">VIN: {activeDelivery.vin}</span>
+                                  <div className="flex flex-wrap items-center gap-1 text-[9px] text-slate-500 font-bold font-mono">
+                                    {activeDelivery.plaque && (
+                                      <span className="bg-slate-100 border border-slate-200 px-1 py-0.2 rounded text-slate-700">Immat: {activeDelivery.plaque}</span>
                                     )}
                                   </div>
                                 </button>
 
-                                <button 
-                                  onClick={() => handleMarkAsDelivered(activeDelivery)}
-                                  className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-black px-3 py-2 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                                  title="Valider la réception et clôturer le dossier"
-                                >
-                                  <CheckCircle2 size={13} /> Sorti
-                                </button>
+                                {/* Validation button 'Sortir' replaces the small icon button, shown only if not delivered */}
+                                {!isLivre && (
+                                  <button 
+                                    onClick={() => handleMarkAsDelivered(activeDelivery)}
+                                    className="text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white font-black px-2.5 py-1.5 rounded transition-colors flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <CheckCircle2 size={11} /> Sortir
+                                  </button>
+                                )}
 
                                 <button 
                                   onClick={() => openDischargeModal(activeDelivery)}
-                                  className="text-xs bg-slate-900 hover:bg-slate-800 text-white font-black px-3 py-2 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                                  title="Remplir et générer la décharge de sortie"
+                                  className="text-[10px] bg-slate-900 hover:bg-slate-800 text-white font-black px-2.5 py-1.5 rounded transition-colors flex items-center gap-1 cursor-pointer"
                                 >
-                                  <Printer size={13} /> Décharge
+                                  <Printer size={11} /> Décharge
                                 </button>
 
-                                <button 
-                                  onClick={() => {
-                                    setIsPlanningSale(activeDelivery);
-                                    setPlanningSlot(activeDelivery.deliverySlot || slot);
-                                    setSelectedDate(activeDelivery.deliveryDate || dateKey);
-                                  }}
-                                  className="text-xs bg-blue-600 hover:bg-blue-500 text-white font-black px-3 py-2 rounded-lg transition-colors flex items-center gap-1 cursor-pointer animate-scale-up"
-                                  title="Modifier la date ou le créneau de sortie"
-                                >
-                                  <CalendarIcon size={13} /> Modifier
-                                </button>
+                                {/* If delivered, modifications restricted to admin and park_manager */}
+                                {isLivre ? (
+                                  canModifySortie && (
+                                    <>
+                                      <button 
+                                        onClick={() => {
+                                          setIsPlanningSale(activeDelivery);
+                                          setPlanningSlot(activeDelivery.deliverySlot || slot);
+                                          setSelectedDate(activeDelivery.deliveryDate || dateKey);
+                                        }}
+                                        className="text-[10px] bg-blue-600 hover:bg-blue-500 text-white font-black px-2.5 py-1.5 rounded transition-colors flex items-center gap-1 cursor-pointer animate-scale-up"
+                                      >
+                                        <CalendarIcon size={11} /> Modifier
+                                      </button>
 
-                                <button 
-                                  onClick={() => handleCancelDelivery(activeDelivery)}
-                                  className="p-2 text-red-600 hover:bg-red-50 hover:border-red-200 border border-transparent rounded-lg transition-all cursor-pointer"
-                                  title="Annuler le rendez-vous"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
+                                      <button 
+                                        onClick={() => handleCancelDelivery(activeDelivery)}
+                                        className="p-1.5 text-red-600 hover:bg-red-50 hover:border-red-200 border border-transparent rounded transition-all cursor-pointer"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </>
+                                  )
+                                ) : (
+                                  <>
+                                    <button 
+                                      onClick={() => {
+                                        setIsPlanningSale(activeDelivery);
+                                        setPlanningSlot(activeDelivery.deliverySlot || slot);
+                                        setSelectedDate(activeDelivery.deliveryDate || dateKey);
+                                      }}
+                                      className="text-[10px] bg-blue-600 hover:bg-blue-500 text-white font-black px-2.5 py-1.5 rounded transition-colors flex items-center gap-1 cursor-pointer animate-scale-up"
+                                    >
+                                      <CalendarIcon size={11} /> Modifier
+                                    </button>
+
+                                    <button 
+                                      onClick={() => handleCancelDelivery(activeDelivery)}
+                                      className="p-1.5 text-red-600 hover:bg-red-50 hover:border-red-200 border border-transparent rounded transition-all cursor-pointer"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             ) : (
                               <div>
@@ -1274,7 +1493,7 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                                   onClick={() => {
                                     setIsAssigningForSlot({ date: dateKey, slot: slot });
                                   }}
-                                  className="text-xs text-slate-600 hover:text-slate-900 font-bold px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                                  className="text-[10px] text-slate-600 hover:text-slate-900 font-bold px-2.5 py-1 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
                                 >
                                   + Assigner un véhicule
                                 </button>
@@ -1287,133 +1506,6 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                   </div>
                 )}
               </div>
-
-              {/* Day Slot Details Section (Only visible in Month view mode for details lookup) */}
-              {calendarViewMode === 'month' && (
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-6 animate-fade-in-up">
-                  <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-4">
-                    <div>
-                      <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-1.5">
-                        📅 Sorties du {new Date(selectedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-1">Consultez l'utilisation des créneaux et complétez les actions de sortie.</p>
-                    </div>
-                    <div className="bg-slate-100 text-slate-700 font-extrabold text-xs px-2.5 py-1 rounded-full border border-slate-200">
-                      {dayDeliveries.length} sortie(s)
-                    </div>
-                  </div>
-
-                  {/* Slots display for selected date */}
-                  <div className="space-y-3">
-                    {config.slots.map(slot => {
-                      // Find if there is a programmed sale on this date and slot
-                      const activeDelivery = (sales || []).find(s => s.deliveryDate === selectedDate && s.deliverySlot === slot && s.deliveryStatus === 'programmee');
-                      
-                      return (
-                        <div key={slot} className={`border rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
-                          activeDelivery ? 'border-blue-200 bg-blue-50/20' : 'border-slate-100 bg-slate-50/20 hover:bg-slate-50'
-                        }`}>
-                          {/* Slot label */}
-                          <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${
-                              activeDelivery ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-400'
-                            }`}>
-                              <Clock size={18} />
-                            </div>
-                            <div>
-                              <span className="text-xs font-black text-slate-400 tracking-wider uppercase block">{slot}</span>
-                              {activeDelivery ? (
-                                <span className="font-extrabold text-blue-900 text-sm">Occupé • {activeDelivery.clientName}</span>
-                              ) : (
-                                <span className="text-slate-400 font-bold text-sm">Disponible</span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Slot Content or Action */}
-                          {activeDelivery ? (
-                            <div className="flex flex-wrap items-center gap-2 md:justify-end">
-                              <button
-                                onClick={() => { setViewingVehicleSale(activeDelivery); }}
-                                className="text-left bg-white border border-blue-200 hover:border-blue-400 p-2.5 rounded-xl shadow-sm hover:shadow-md transition-all group flex flex-col gap-1 shrink-0 cursor-pointer"
-                                title="Cliquer pour afficher les détails du véhicule"
-                              >
-                                <div className="flex items-center gap-1.5 font-extrabold text-blue-900 group-hover:text-blue-600 transition-colors text-xs">
-                                  <Car size={13} className="text-blue-500" />
-                                  <span>{activeDelivery.marque} {activeDelivery.modele}</span>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 font-bold font-mono">
-                                  {activeDelivery.plaque ? (
-                                    <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-700">Immat: {activeDelivery.plaque}</span>
-                                  ) : (
-                                    <span className="bg-slate-50 border border-slate-150 px-1.5 py-0.5 rounded text-slate-400 italic">Sans plaque</span>
-                                  )}
-                                  {activeDelivery.vin && (
-                                    <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-700">VIN: {activeDelivery.vin}</span>
-                                  )}
-                                </div>
-                              </button>
-
-                              {/* Mark Delivered Button */}
-                              <button 
-                                onClick={() => handleMarkAsDelivered(activeDelivery)}
-                                className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-black px-3 py-2 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                                title="Valider la réception et clôturer le dossier"
-                              >
-                                <CheckCircle2 size={13} /> Sorti
-                              </button>
-
-                              {/* Generate Discharge Button */}
-                              <button 
-                                onClick={() => openDischargeModal(activeDelivery)}
-                                className="text-xs bg-slate-900 hover:bg-slate-800 text-white font-black px-3 py-2 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                                title="Remplir et générer la décharge de sortie"
-                              >
-                                <Printer size={13} /> Décharge
-                              </button>
-
-                              {/* Modifier Button */}
-                              <button 
-                                onClick={() => {
-                                  setIsPlanningSale(activeDelivery);
-                                  setPlanningSlot(activeDelivery.deliverySlot || slot);
-                                  if (activeDelivery.deliveryDate) {
-                                    setSelectedDate(activeDelivery.deliveryDate);
-                                  }
-                                }}
-                                className="text-xs bg-blue-600 hover:bg-blue-500 text-white font-black px-3 py-2 rounded-lg transition-colors flex items-center gap-1 cursor-pointer animate-scale-up"
-                                title="Modifier la date ou le créneau de sortie"
-                              >
-                                <CalendarIcon size={13} /> Modifier
-                              </button>
-
-                              {/* Cancel Button */}
-                              <button 
-                                onClick={() => handleCancelDelivery(activeDelivery)}
-                                className="p-2 text-red-600 hover:bg-red-50 hover:border-red-200 border border-transparent rounded-lg transition-all cursor-pointer"
-                                title="Annuler le rendez-vous"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          ) : (
-                            <div>
-                              <button 
-                                onClick={() => {
-                                  setIsAssigningForSlot({ date: selectedDate, slot: slot });
-                                }}
-                                className="text-xs text-slate-600 hover:text-slate-900 font-bold px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
-                              >
-                                + Assigner un véhicule
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -1777,7 +1869,17 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
             <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
               {(() => {
                 // Collect and sort all logs across all sales
-                const allLogs: { saleId: string; client: string; vehicle: string; user: string; action: string; timestamp: string }[] = [];
+                const allLogs: { 
+                  saleId: string; 
+                  client: string; 
+                  vehicle: string; 
+                  chassis: string;
+                  plaque: string;
+                  user: string; 
+                  action: string; 
+                  timestamp: string; 
+                  sale: any;
+                }[] = [];
                 (sales || []).forEach(sale => {
                   if (sale.deliveryLog) {
                     sale.deliveryLog.forEach(log => {
@@ -1785,9 +1887,12 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                         saleId: sale.id,
                         client: sale.clientName,
                         vehicle: `${sale.marque} ${sale.modele}`,
+                        chassis: sale.vin || 'Non renseigné',
+                        plaque: sale.plaque || 'Non renseignée',
                         user: log.user,
                         action: log.action,
-                        timestamp: log.timestamp
+                        timestamp: log.timestamp,
+                        sale: sale
                       });
                     });
                   }
@@ -1806,16 +1911,20 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                 }
 
                 return allLogs.map((log, idx) => (
-                  <div key={idx} className="bg-slate-50/50 border border-slate-200/40 p-4 rounded-xl flex items-start justify-between gap-4 text-xs">
+                  <div key={idx} className="bg-slate-50/50 border border-slate-200/40 p-4 rounded-xl flex items-start justify-between gap-4 text-xs hover:bg-slate-50 transition-colors">
                     <div className="space-y-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-extrabold text-slate-800">{log.user}</span>
                         <span className="text-slate-400 font-bold">•</span>
                         <span className="text-slate-500 font-bold">{log.action}</span>
                       </div>
-                      <div className="text-slate-400 font-bold text-[10px] uppercase">
-                        Dossier : {log.client} ({log.vehicle})
-                      </div>
+                      <button 
+                        onClick={() => setViewingVehicleSale(log.sale)}
+                        className="text-left text-blue-600 hover:text-blue-800 font-extrabold text-[10px] uppercase cursor-pointer hover:underline block mt-1 transition-all"
+                        title="Cliquer pour ouvrir le dossier"
+                      >
+                        Dossier : {log.client} - {log.vehicle} - Châssis : {log.chassis} - Plaque : {log.plaque}
+                      </button>
                     </div>
                     <span className="text-slate-400 font-bold text-[10px] shrink-0 font-mono">
                       {new Date(log.timestamp).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -1867,7 +1976,7 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                 >
                   {config.slots.map(slot => {
                     // Check if slot already occupied on this date
-                    const isOccupied = (sales || []).some(s => s.deliveryDate === selectedDate && s.deliverySlot === slot && s.deliveryStatus === 'programmee');
+                    const isOccupied = (sales || []).some(s => s.deliveryDate === selectedDate && s.deliverySlot === slot && (s.deliveryStatus === 'programmee' || s.deliveryStatus === 'livre'));
                     return (
                       <option key={slot} value={slot} disabled={isOccupied}>
                         {slot} {isOccupied ? " (Déjà réservé)" : " (Disponible)"}
