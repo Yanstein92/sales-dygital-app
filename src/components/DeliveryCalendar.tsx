@@ -1,5 +1,10 @@
+<<<<<<< HEAD
 import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar as CalendarIcon, Clock, Plus, X, ChevronLeft, ChevronRight, User, Car, Settings, Check, CheckCircle2, AlertCircle, Trash2, History, ClipboardCopy, Printer, ArrowRight, Save, Info, RefreshCw, Bell, Search } from 'lucide-react';
+=======
+import React, { useState, useEffect } from 'react';
+import { Calendar as CalendarIcon, Clock, Plus, X, ChevronLeft, ChevronRight, User, Car, Settings, Check, CheckCircle2, AlertCircle, Trash2, History, ClipboardCopy, Printer, ArrowRight, Save, Info, RefreshCw, Bell } from 'lucide-react';
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
 import { db, doc, setDoc, getDoc, getUserDocPath } from '../lib/firebase';
 import { useApp } from '../lib/context';
 import { Sale } from '../types';
@@ -15,7 +20,10 @@ interface DeliveryConfig {
   maxDeliveriesPerDay?: number;
   blockedPeriods?: { from: string; to: string; reason?: string }[];
   reminderDaysBefore?: number;
+<<<<<<< HEAD
   minDaysBeforeBooking?: number;
+=======
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
 }
 
 export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast }) => {
@@ -25,7 +33,10 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
   const [activeTab, setActiveTab] = useState<'calendar' | 'config' | 'logs'>('calendar');
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+<<<<<<< HEAD
   const [calendarViewMode, setCalendarViewMode] = useState<'day' | 'week' | 'month'>('month');
+=======
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
   
   // Configuration states
   const [config, setConfig] = useState<DeliveryConfig>({
@@ -49,7 +60,10 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
   const [planningSlot, setPlanningSlot] = useState<string>('');
   const [viewingVehicleSale, setViewingVehicleSale] = useState<Sale | null>(null);
   const [isAssigningForSlot, setIsAssigningForSlot] = useState<{ date: string; slot: string } | null>(null);
+<<<<<<< HEAD
   const [searchQueryToPlan, setSearchQueryToPlan] = useState('');
+=======
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
 
   // Discharge Generation State
   const [isGeneratingDischarge, setIsGeneratingDischarge] = useState<Sale | null>(null);
@@ -86,9 +100,13 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
             workingDays: data.workingDays || [1, 2, 3, 4, 5],
             dischargeText: data.dischargeText || "Je soussigné, [Client], certifie avoir pris livraison du véhicule [Marque] [Modèle] immatriculé [Plaque] (N° VIN : [VIN]) en parfait état et muni de tous ses documents administratifs.",
             maxDeliveriesPerDay: data.maxDeliveriesPerDay || 4,
+<<<<<<< HEAD
             blockedPeriods: data.blockedPeriods || [],
             reminderDaysBefore: data.reminderDaysBefore ?? 1,
             minDaysBeforeBooking: data.minDaysBeforeBooking ?? 0
+=======
+            blockedPeriods: data.blockedPeriods || []
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
           });
         } else {
           // Initialize first default config
@@ -184,7 +202,10 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
         deliveryDate: date,
         deliverySlot: slot,
         deliveryStatus: 'programmee' as const,
+<<<<<<< HEAD
         releaseStatus: 'programmee' as const,
+=======
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
         deliveryLog: [...existingLog, logEntry]
       };
 
@@ -203,13 +224,20 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
       const saleRef = doc(db, getUserDocPath(databaseUid) + '/sales/' + sale.id);
       const logEntry = {
         user: userProfile?.name || 'Administrateur',
+<<<<<<< HEAD
         action: "Livraison marquée comme EFFECTUÉE (SORTIE)",
+=======
+        action: "Livraison marquée comme EFFECTUÉE (LIVRÉE)",
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
         timestamp: new Date().toISOString()
       };
       const existingLog = sale.deliveryLog || [];
       await setDoc(saleRef, {
         deliveryStatus: 'livre',
+<<<<<<< HEAD
         releaseStatus: 'sorti',
+=======
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
         deliveryLog: [...existingLog, logEntry]
       }, { merge: true });
       onShowToast(`Véhicule marqué comme livré. Dossier clôturé !`, "success");
@@ -232,7 +260,10 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
       const existingLog = sale.deliveryLog || [];
       await setDoc(saleRef, {
         deliveryStatus: 'annule',
+<<<<<<< HEAD
         releaseStatus: 'non_sorti',
+=======
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
         deliveryLog: [...existingLog, logEntry]
       }, { merge: true });
       onShowToast("Livraison annulée.", "success");
@@ -245,6 +276,7 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
   const invoicedSales = (sales || []).filter(s => s.factureStatus === 'facture');
   
   // Pending planifications: Invoiced and doesn't have a programmed date or status is non_programmee/annule
+<<<<<<< HEAD
   const pendingPlanificationSales = useMemo(() => {
     const basePending = invoicedSales.filter(s => !s.deliveryDate || s.deliveryStatus === 'non_programmee' || s.deliveryStatus === 'annule');
     if (!searchQueryToPlan) return basePending;
@@ -261,6 +293,9 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
       );
     });
   }, [invoicedSales, searchQueryToPlan]);
+=======
+  const pendingPlanificationSales = invoicedSales.filter(s => !s.deliveryDate || s.deliveryStatus === 'non_programmee' || s.deliveryStatus === 'annule');
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
 
   // Filter active programmed deliveries for the selectedDate
   const dayDeliveries = invoicedSales.filter(s => s.deliveryDate === selectedDate && s.deliveryStatus === 'programmee');
@@ -294,6 +329,7 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
     return days;
   };
 
+<<<<<<< HEAD
   const getDaysInWeek = (refDate: Date) => {
     const days = [];
     const day = refDate.getDay();
@@ -322,6 +358,9 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
       return getDaysInDay(currentMonth);
     }
   }, [calendarViewMode, currentMonth]);
+=======
+  const calendarDays = getDaysInMonth(currentMonth);
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
 
   // Helper to format date key YYYY-MM-DD
   const formatDateKey = (d: Date) => {
@@ -331,6 +370,7 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
     return `${yyyy}-${mm}-${dd}`;
   };
 
+<<<<<<< HEAD
   const handlePeriodChange = (direction: 'prev' | 'next') => {
     const newDate = new Date(currentMonth);
     if (calendarViewMode === 'month') {
@@ -364,6 +404,12 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
     } else {
       return currentMonth.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     }
+=======
+  const handleMonthChange = (direction: 'prev' | 'next') => {
+    const newDate = new Date(currentMonth);
+    newDate.setMonth(currentMonth.getMonth() + (direction === 'prev' ? -1 : 1));
+    setCurrentMonth(newDate);
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
   };
 
   // Copy reservation link
@@ -454,10 +500,13 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
       ? `Acheteur d'origine : ${isGeneratingDischarge.clientName}`
       : `Mandataire / Récupérateur : ${dischargeForm.recipientName} (Pièce d'identité : ${dischargeForm.recipientId || 'N/A'})`;
 
+<<<<<<< HEAD
     // Retrieve company details
     const compName = isGeneratingDischarge.company || "Dygital";
     const compDetail = userProfile?.companiesDetails?.find(c => c.name.toUpperCase() === compName.toUpperCase());
 
+=======
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
     // Print Layout
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -466,7 +515,11 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
     }
 
     const docDate = new Date().toLocaleDateString('fr-FR');
+<<<<<<< HEAD
     const docTitle = `decharge_${compName.replace(/\s+/g, '_')}_${isGeneratingDischarge.bdcNumber}_${docDate.replace(/\//g, '-')}`;
+=======
+    const docTitle = `decharge_${(isGeneratingDischarge.company || "Dygital").replace(/\s+/g, '_')}_${isGeneratingDischarge.bdcNumber}_${docDate.replace(/\//g, '-')}`;
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
 
     printWindow.document.write(`
       <html>
@@ -616,6 +669,7 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
           </style>
         </head>
         <body>
+<<<<<<< HEAD
           <div class="header" style="display: flex; justify-content: space-between; align-items: start; border-bottom: 2px solid #0f172a; padding-bottom: 15px; margin-bottom: 25px;">
             <div style="display: flex; align-items: center; gap: 15px;">
               ${compDetail?.logoUrl ? `
@@ -637,6 +691,16 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                 <div>N° Bon de Commande : <strong>${isGeneratingDischarge.bdcNumber}</strong></div>
                 <div>Date de sortie : <strong>${docDate}</strong></div>
               </div>
+=======
+          <div class="header">
+            <div>
+              <div class="company-name">${isGeneratingDischarge.company || "Dygital"}</div>
+              <div class="doc-title">Décharge de livraison</div>
+            </div>
+            <div style="text-align: right; font-size: 12px; color: #64748b;">
+              <div>Bon de Commande : <strong>${isGeneratingDischarge.bdcNumber}</strong></div>
+              <div>Date de livraison : <strong>${docDate}</strong></div>
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
             </div>
           </div>
 
@@ -661,13 +725,21 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
           <div class="section">
             <div class="section-title">Destinataire / Mandataire</div>
             <div class="info-box">
+<<<<<<< HEAD
               <div class="info-label">Bénéficiaire de la sortie</div>
+=======
+              <div class="info-label">Bénéficiaire de la livraison</div>
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
               <div class="info-value" style="font-size: 15px;">${recipientLine}</div>
             </div>
           </div>
 
           <div class="section">
+<<<<<<< HEAD
             <div class="section-title">Attestation de sortie & conformité</div>
+=======
+            <div class="section-title">Attestation de livraison & conformité</div>
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
             <div class="discharge-text">
               "${text}"
             </div>
@@ -720,16 +792,27 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
           <div class="signatures">
             <div class="sig-box">
               <div class="sig-title">Signature du client / mandataire</div>
+<<<<<<< HEAD
               <div style="font-size: 11px; color: #94a3b8; text-align: center;">Mention manuscrite "Bon pour décharge de sortie"</div>
             </div>
             <div class="sig-box">
               <div class="sig-title">Le concessionnaire (${compName})</div>
+=======
+              <div style="font-size: 11px; color: #94a3b8; text-align: center;">Mention manuscrite "Bon pour décharge"</div>
+            </div>
+            <div class="sig-box">
+              <div class="sig-title">Le livreur (${isGeneratingDischarge.company || "Dygital"})</div>
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
               <div style="font-size: 11px; color: #94a3b8; text-align: center;">Nom et signature du préparateur</div>
             </div>
           </div>
 
           <div class="footer">
+<<<<<<< HEAD
             Document généré numériquement par ${compName}. Fait à la date du ${docDate}.
+=======
+            Document généré numériquement par Dygital SaaS. Fait à la date du ${docDate}.
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
           </div>
 
           <script>
@@ -751,7 +834,11 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
       <div className="bg-slate-900 text-white p-6 shadow-md border-b border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-black flex items-center gap-2.5">
+<<<<<<< HEAD
             <CalendarIcon className="text-blue-400" size={26} /> Calendrier des Sorties
+=======
+            <CalendarIcon className="text-blue-400" size={26} /> Calendrier de Livraison
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
           </h2>
           <p className="text-sm text-slate-400 mt-1">Gérez la préparation des véhicules facturés, programmez les rendez-vous et générez les décharges.</p>
         </div>
@@ -791,6 +878,7 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
                   Véhicules à planifier ({pendingPlanificationSales.length})
                 </h3>
+<<<<<<< HEAD
                 <p className="text-xs text-slate-400 mt-1">Dossiers d'achat déjà facturés sans date de sortie programmée.</p>
               </div>
 
@@ -812,6 +900,9 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                     <X size={14} />
                   </button>
                 )}
+=======
+                <p className="text-xs text-slate-400 mt-1">Dossiers d'achat déjà facturés sans date de livraison programmée.</p>
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
               </div>
 
               {/* Scrollable list of pending vehicles */}
@@ -878,6 +969,7 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
               
               {/* Calendar Grid Controller */}
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5">
+<<<<<<< HEAD
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5 pb-3 border-b border-slate-100">
                   <div className="flex items-center gap-1">
                     <h3 className="text-lg font-black text-slate-800 capitalize">
@@ -1414,6 +1506,227 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                   </div>
                 </div>
               )}
+=======
+                <div className="flex items-center justify-between mb-5">
+                  <div className="flex items-center gap-1">
+                    <h3 className="text-lg font-black text-slate-800 capitalize">
+                      {currentMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => handleMonthChange('prev')} 
+                      className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer"
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+                    <button 
+                      onClick={() => setCurrentMonth(new Date())} 
+                      className="text-xs font-bold px-2.5 py-1.5 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition-colors cursor-pointer"
+                    >
+                      Aujourd'hui
+                    </button>
+                    <button 
+                      onClick={() => handleMonthChange('next')} 
+                      className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer"
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Day Header */}
+                <div className="grid grid-cols-7 gap-1 text-center font-black text-[10px] text-slate-400 uppercase tracking-widest mb-2">
+                  <span>Lun</span>
+                  <span>Mar</span>
+                  <span>Mer</span>
+                  <span>Jeu</span>
+                  <span>Ven</span>
+                  <span>Sam</span>
+                  <span>Dim</span>
+                </div>
+
+                {/* Day Grid */}
+                <div className="grid grid-cols-7 gap-1">
+                  {calendarDays.map((cell, idx) => {
+                    const dateKey = formatDateKey(cell.date);
+                    const isSelected = selectedDate === dateKey;
+                    const isToday = formatDateKey(new Date()) === dateKey;
+                    
+                    // Filter deliveries scheduled for this cell day
+                    const cellDeliveries = (sales || []).filter(s => s.deliveryDate === dateKey && s.deliveryStatus === 'programmee');
+
+                    const isBlockedDate = (config.blockedPeriods || []).some(
+                      p => dateKey >= p.from && dateKey <= p.to
+                    );
+
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => setSelectedDate(dateKey)}
+                        onDragOver={(e) => {
+                          if (!isBlockedDate) {
+                            e.preventDefault();
+                          }
+                        }}
+                        onDrop={(e) => {
+                          if (!isBlockedDate) {
+                            const saleId = e.dataTransfer.getData("text/plain");
+                            handleDropOnCell(saleId, dateKey);
+                          }
+                        }}
+                        className={`h-20 p-1 rounded-xl border flex flex-col justify-between items-start transition-all cursor-pointer relative ${
+                          isBlockedDate
+                          ? 'bg-red-50/30 border-red-100 text-slate-500'
+                          : cell.isCurrentMonth ? 'bg-white' : 'bg-slate-50/50 text-slate-400'
+                        } ${
+                          isSelected 
+                          ? 'border-blue-600 ring-2 ring-blue-500/10 shadow-md bg-blue-50/10' 
+                          : 'border-slate-100 hover:border-slate-300 hover:bg-slate-50/40'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center w-full">
+                          <span className={`text-xs font-black px-1.5 py-0.5 rounded-md ${
+                            isToday ? 'bg-blue-600 text-white' : 'text-slate-700'
+                          }`}>
+                            {cell.date.getDate()}
+                          </span>
+                          
+                          {isBlockedDate && (
+                            <span className="text-[8px] bg-red-100 text-red-800 px-1 py-0.5 rounded font-black uppercase tracking-wider scale-90" title="Période de livraison bloquée">Bloqué</span>
+                          )}
+                          {!isBlockedDate && cellDeliveries.length > 0 && (
+                            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-scale-up" title={`${cellDeliveries.length} livraison(s)`}></span>
+                          )}
+                        </div>
+
+                        {/* Miniature display of deliveries */}
+                        <div className="w-full mt-1 overflow-hidden space-y-0.5 text-left shrink-0">
+                          {cellDeliveries.slice(0, 2).map(delivery => (
+                            <div key={delivery.id} className="text-[9px] bg-blue-50 text-blue-900 border border-blue-100 font-extrabold truncate px-1 rounded-md py-0.5 leading-none">
+                              {delivery.marque} {delivery.modele}
+                            </div>
+                          ))}
+                          {cellDeliveries.length > 2 && (
+                            <div className="text-[8px] font-bold text-slate-400 pl-1">+{cellDeliveries.length - 2} autres</div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Day Slot Details Section */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-6 animate-fade-in-up">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-4">
+                  <div>
+                    <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-1.5">
+                      📅 Livraisons du {new Date(selectedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">Consultez l'utilisation des créneaux et complétez les actions de livraison.</p>
+                  </div>
+                  <div className="bg-slate-100 text-slate-700 font-extrabold text-xs px-2.5 py-1 rounded-full border border-slate-200">
+                    {dayDeliveries.length} livraison(s)
+                  </div>
+                </div>
+
+                {/* Slots display for selected date */}
+                <div className="space-y-3">
+                  {config.slots.map(slot => {
+                    // Find if there is a programmed sale on this date and slot
+                    const activeDelivery = (sales || []).find(s => s.deliveryDate === selectedDate && s.deliverySlot === slot && s.deliveryStatus === 'programmee');
+                    
+                    return (
+                      <div key={slot} className={`border rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
+                        activeDelivery ? 'border-blue-200 bg-blue-50/20' : 'border-slate-100 bg-slate-50/20 hover:bg-slate-50'
+                      }`}>
+                        {/* Slot label */}
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${
+                            activeDelivery ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-400'
+                          }`}>
+                            <Clock size={18} />
+                          </div>
+                          <div>
+                            <span className="text-xs font-black text-slate-400 tracking-wider uppercase block">{slot}</span>
+                            {activeDelivery ? (
+                              <span className="font-extrabold text-blue-900 text-sm">Occupé • {activeDelivery.clientName}</span>
+                            ) : (
+                              <span className="text-slate-400 font-bold text-sm">Disponible</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Slot Content or Action */}
+                        {activeDelivery ? (
+                          <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                            <button
+                              onClick={() => { window.location.hash = '#detail/' + activeDelivery.id; }}
+                              className="text-left bg-white border border-blue-200 hover:border-blue-400 p-2.5 rounded-xl shadow-sm hover:shadow-md transition-all group flex flex-col gap-1 shrink-0 cursor-pointer"
+                              title="Cliquer pour ouvrir le dossier client dans l'application"
+                            >
+                              <div className="flex items-center gap-1.5 font-extrabold text-blue-900 group-hover:text-blue-600 transition-colors text-xs">
+                                <Car size={13} className="text-blue-500" />
+                                <span>{activeDelivery.marque} {activeDelivery.modele}</span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 font-bold font-mono">
+                                {activeDelivery.plaque ? (
+                                  <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-700">Immat: {activeDelivery.plaque}</span>
+                                ) : (
+                                  <span className="bg-slate-50 border border-slate-150 px-1.5 py-0.5 rounded text-slate-400 italic">Sans plaque</span>
+                                )}
+                                {activeDelivery.vin && (
+                                  <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-700">VIN: {activeDelivery.vin}</span>
+                                )}
+                              </div>
+                            </button>
+
+                            {/* Mark Delivered Button */}
+                            <button 
+                              onClick={() => handleMarkAsDelivered(activeDelivery)}
+                              className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-black px-3 py-2 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                              title="Valider la réception et clôturer le dossier"
+                            >
+                              <CheckCircle2 size={13} /> Livré
+                            </button>
+
+                            {/* Generate Discharge Button */}
+                            <button 
+                              onClick={() => openDischargeModal(activeDelivery)}
+                              className="text-xs bg-slate-900 hover:bg-slate-800 text-white font-black px-3 py-2 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                              title="Remplir et générer la décharge de livraison"
+                            >
+                              <Printer size={13} /> Décharge
+                            </button>
+
+                            {/* Cancel Button */}
+                            <button 
+                              onClick={() => handleCancelDelivery(activeDelivery)}
+                              className="p-2 text-red-600 hover:bg-red-50 hover:border-red-200 border border-transparent rounded-lg transition-all cursor-pointer"
+                              title="Annuler le rendez-vous"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div>
+                            <button 
+                              onClick={() => {
+                                setIsAssigningForSlot({ date: selectedDate, slot: slot });
+                              }}
+                              className="text-xs text-slate-600 hover:text-slate-900 font-bold px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                            >
+                              + Assigner un véhicule
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
             </div>
           </div>
         )}
@@ -1598,6 +1911,7 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                     </button>
                   </div>
                 </div>
+<<<<<<< HEAD
 
                 {/* Minimum days before client booking restriction */}
                 <div className="bg-slate-50 border border-slate-200/60 p-5 rounded-2xl space-y-3 shadow-inner">
@@ -1634,6 +1948,8 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                     </button>
                   </div>
                 </div>
+=======
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
               </div>
 
               {/* Blocked Periods Form and List */}
@@ -1839,7 +2155,11 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
               <X size={20} />
             </button>
             
+<<<<<<< HEAD
             <h3 className="font-extrabold text-slate-900 text-lg mb-2">Programmer la Sortie</h3>
+=======
+            <h3 className="font-extrabold text-slate-900 text-lg mb-2">Programmer la Livraison</h3>
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
             <p className="text-xs text-slate-500 mb-4">Configurez le rendez-vous pour <span className="font-bold text-slate-800">{isPlanningSale.clientName}</span>.</p>
             
             <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 mb-4 space-y-1 text-xs text-slate-700">
@@ -1896,7 +2216,11 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
             {/* Modal Header */}
             <div className="p-6 border-b border-slate-100 flex justify-between items-center shrink-0">
               <div>
+<<<<<<< HEAD
                 <h3 className="font-extrabold text-slate-900 text-lg">Générer la Décharge de Sortie</h3>
+=======
+                <h3 className="font-extrabold text-slate-900 text-lg">Générer la Décharge de Livraison</h3>
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
                 <p className="text-xs text-slate-500 mt-0.5">Complétez le récépissé de remise des clés.</p>
               </div>
               <button 
@@ -2043,7 +2367,11 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
             {/* Modal Header */}
             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
               <div>
+<<<<<<< HEAD
                 <span className="bg-amber-100 text-amber-800 text-[10px] font-black uppercase px-2.5 py-1 rounded-full border border-amber-200">Facturé • En attente de sortie</span>
+=======
+                <span className="bg-amber-100 text-amber-800 text-[10px] font-black uppercase px-2.5 py-1 rounded-full border border-amber-200">Facturé • En attente de livraison</span>
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
                 <h3 className="font-extrabold text-slate-900 text-lg mt-2 flex items-center gap-2">
                   <Car className="text-blue-600" size={18} />
                   {viewingVehicleSale.marque} {viewingVehicleSale.modele}

@@ -81,6 +81,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ saleId, onShowToas
   const getAvailableDates = () => {
     const dates = [];
     const today = new Date();
+<<<<<<< HEAD
     const todayNormalized = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const minDays = config.minDaysBeforeBooking || 0;
 
@@ -91,6 +92,11 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ saleId, onShowToas
       const diffTime = dNormalized.getTime() - todayNormalized.getTime();
       const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
+=======
+    for (let i = 0; i < 30; i++) {
+      const d = new Date();
+      d.setDate(today.getDate() + i);
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
       const dayOfWeek = d.getDay(); // 0 Sunday, 6 Saturday
       
       // Filter out non-working days
@@ -100,6 +106,7 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ saleId, onShowToas
         const dd = String(d.getDate()).padStart(2, '0');
         const formattedDate = `${yyyy}-${mm}-${dd}`;
 
+<<<<<<< HEAD
         let isBlocked = false;
         let blockedReason = '';
 
@@ -112,16 +119,25 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ saleId, onShowToas
         // 2. Check if date is in any blocked period
         const blockedPeriods = config.blockedPeriods || [];
         const isInBlockedPeriod = blockedPeriods.some((p: any) => {
+=======
+        // 1. Check if date is in any blocked period
+        const blockedPeriods = config.blockedPeriods || [];
+        const isBlocked = blockedPeriods.some((p: any) => {
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
           if (!p.from || !p.to) return false;
           return formattedDate >= p.from && formattedDate <= p.to;
         });
 
+<<<<<<< HEAD
         if (isInBlockedPeriod) {
           isBlocked = true;
           blockedReason = "Indisponible";
         }
 
         // 3. Check if day has reached limit
+=======
+        // 2. Check if day has reached limit
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
         const maxLimit = config.maxDeliveriesPerDay;
         let isFullyBooked = false;
         if (maxLimit && maxLimit > 0) {
@@ -136,8 +152,12 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ saleId, onShowToas
           label: d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }),
           rawDate: d,
           isBlocked,
+<<<<<<< HEAD
           isFullyBooked,
           blockedReason
+=======
+          isFullyBooked
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
         });
       }
     }
@@ -271,9 +291,13 @@ export const ClientBooking: React.FC<ClientBookingProps> = ({ saleId, onShowToas
                   <span className="text-lg font-black">{item.label.split(' ')[1]}</span>
                   <span className="text-xs font-medium text-slate-500">{item.label.split(' ')[2]}</span>
                   {item.isBlocked && (
+<<<<<<< HEAD
                     <span className="absolute bottom-1 text-[8px] font-black bg-red-100 text-red-800 px-1 rounded uppercase tracking-wider scale-90" title={item.blockedReason}>
                       {item.blockedReason || "Bloqué"}
                     </span>
+=======
+                    <span className="absolute bottom-1 text-[8px] font-black bg-red-100 text-red-800 px-1 rounded uppercase tracking-wider scale-90">Bloqué</span>
+>>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
                   )}
                   {item.isFullyBooked && (
                     <span className="absolute bottom-1 text-[8px] font-black bg-amber-100 text-amber-800 px-1 rounded uppercase tracking-wider scale-90">Complet</span>
