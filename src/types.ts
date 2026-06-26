@@ -68,11 +68,8 @@ export interface CompanyDetails {
   siret?: string;
   address?: string;
   logoUrl?: string;
-<<<<<<< HEAD
   email?: string;
   phone?: string;
-=======
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
 }
 
 export interface UserProfile {

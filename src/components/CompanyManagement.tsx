@@ -15,11 +15,8 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
   const [newSiret, setNewSiret] = useState('');
   const [newAddress, setNewAddress] = useState('');
   const [newLogoUrl, setNewLogoUrl] = useState('');
-<<<<<<< HEAD
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
-=======
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
 
   // Editing state
   const [editingCompany, setEditingCompany] = useState<string | null>(null); // name of company being edited
@@ -27,11 +24,8 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
   const [editAddress, setEditAddress] = useState('');
   const [editLogoUrl, setEditLogoUrl] = useState('');
   const [editName, setEditName] = useState('');
-<<<<<<< HEAD
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
-=======
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -89,13 +83,9 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
         name: trimmed,
         siret: newSiret.trim(),
         address: newAddress.trim(),
-<<<<<<< HEAD
         logoUrl: newLogoUrl,
         email: newEmail.trim(),
         phone: newPhone.trim()
-=======
-        logoUrl: newLogoUrl
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
       };
 
       const updatedDetails = [...companiesDetails.filter(c => c.name.toUpperCase() !== trimmed), newDetail];
@@ -114,11 +104,8 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
       setNewSiret('');
       setNewAddress('');
       setNewLogoUrl('');
-<<<<<<< HEAD
       setNewEmail('');
       setNewPhone('');
-=======
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
       onShowToast(`Entreprise "${trimmed}" créée avec succès.`, "success");
     } catch (err) {
       onShowToast("Erreur lors de la création de l'entreprise.", "error");
@@ -132,11 +119,8 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
     setEditSiret(detail.siret || '');
     setEditAddress(detail.address || '');
     setEditLogoUrl(detail.logoUrl || '');
-<<<<<<< HEAD
     setEditEmail(detail.email || '');
     setEditPhone(detail.phone || '');
-=======
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
   };
 
   const handleSaveEdit = async () => {
@@ -171,13 +155,9 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
         name: trimmedName,
         siret: editSiret.trim(),
         address: editAddress.trim(),
-<<<<<<< HEAD
         logoUrl: editLogoUrl,
         email: editEmail.trim(),
         phone: editPhone.trim()
-=======
-        logoUrl: editLogoUrl
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
       };
 
       // Filter out both the old and new names to avoid duplicates, then add the new details
@@ -286,7 +266,6 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
                           <span className="font-bold text-slate-600">Adresse : </span>
                           {detail.address ? <span className="text-slate-700">{detail.address}</span> : <span className="italic text-slate-400">Non renseignée</span>}
                         </p>
-<<<<<<< HEAD
                         {(detail.email || detail.phone) && (
                           <p className="text-xs text-slate-500 font-medium truncate max-w-sm">
                             {detail.email && <span>{detail.email}</span>}
@@ -294,8 +273,6 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
                             {detail.phone && <span>{detail.phone}</span>}
                           </p>
                         )}
-=======
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
                       </div>
                     </div>
                   </div>
@@ -410,7 +387,6 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-600 focus:outline-none"
                   />
                 </div>
-<<<<<<< HEAD
 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">E-mail</label>
@@ -433,8 +409,6 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-600 focus:outline-none"
                   />
                 </div>
-=======
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
@@ -523,11 +497,7 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
                   </div>
                 </div>
 
-<<<<<<< HEAD
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-=======
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
                   <div className="md:col-span-1">
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Nom commercial</label>
                     <input
@@ -559,7 +529,6 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
                       className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-600 focus:outline-none"
                     />
                   </div>
-<<<<<<< HEAD
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">E-mail</label>
                     <input
@@ -580,8 +549,6 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
                       className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-600 focus:outline-none"
                     />
                   </div>
-=======
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
                 </div>
 
                 <div className="flex justify-end">

@@ -277,7 +277,6 @@ async function startServer() {
           return res.status(400).json({ error: "Cette période est temporairement bloquée pour les livraisons." });
         }
 
-<<<<<<< HEAD
         // 1b. Check minDaysBeforeBooking
         const minDays = configData.minDaysBeforeBooking || 0;
         if (minDays > 0) {
@@ -295,8 +294,6 @@ async function startServer() {
           }
         }
 
-=======
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
         // 2. Check max deliveries limit
         const maxLimit = configData.maxDeliveriesPerDay;
         if (maxLimit && maxLimit > 0) {
@@ -330,10 +327,7 @@ async function startServer() {
         deliveryDate: date,
         deliverySlot: slot,
         deliveryStatus: 'programmee',
-<<<<<<< HEAD
         releaseStatus: 'programmee',
-=======
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
         deliveryLog: [...existingLog, logEntry]
       });
 

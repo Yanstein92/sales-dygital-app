@@ -500,7 +500,6 @@ const MainAppContent: React.FC = () => {
             <button 
               onClick={() => window.location.hash = 'delivery_calendar'}
               className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${currentView === 'delivery_calendar' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
-<<<<<<< HEAD
               title="Calendrier des sorties"
             >
               <CalendarIcon size={20} />
@@ -508,27 +507,6 @@ const MainAppContent: React.FC = () => {
               <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Calendrier des sorties</div>
             </button>
 
-=======
-              title="Calendrier de livraison"
-            >
-              <CalendarIcon size={20} />
-              <span className="text-[9px] font-bold tracking-tight block md:hidden lg:block">Agenda</span>
-              <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Calendrier de livraison</div>
-            </button>
-
-            {userProfile?.role === 'admin' && (
-              <button 
-                onClick={() => window.location.hash = 'perf_dashboard'}
-                className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${currentView === 'perf_dashboard' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
-                title="Performance"
-              >
-                <TrendingUp size={20} />
-                <span className="text-[9px] font-bold tracking-tight block md:hidden lg:block">Stats</span>
-                <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Performances</div>
-              </button>
-            )}
-
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
             {userProfile?.role === 'admin' && (
               <button 
                 onClick={() => window.location.hash = 'perf_dashboard'}
@@ -734,11 +712,7 @@ const MainAppContent: React.FC = () => {
                 <span>Sales Dygital</span>
                 <span>/</span>
                 <span className="text-slate-600 font-black">
-<<<<<<< HEAD
                   {currentView === 'dashboard' ? 'Bons de commande' : currentView === 'detail' ? 'Détails du dossier' : currentView === 'delivery_calendar' ? 'Calendrier des sorties' : 'Validation' }
-=======
-                  {currentView === 'dashboard' ? 'Bons de commande' : currentView === 'detail' ? 'Détails du dossier' : currentView === 'delivery_calendar' ? 'Calendrier de livraison' : 'Validation' }
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
                 </span>
               </div>
               <div className="flex items-center gap-2 group mt-0.5">
@@ -844,11 +818,7 @@ const MainAppContent: React.FC = () => {
                 <DeliveryCalendar onShowToast={showToast} />
               )}
               {currentView === 'perf_dashboard' && (
-<<<<<<< HEAD
                 <AdminPerformanceDashboard onShowToast={showToast} />
-=======
-                <AdminPerformanceDashboard />
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
               )}
               {currentView === 'detail' && selectedSaleId && (
                 <SaleDetail 

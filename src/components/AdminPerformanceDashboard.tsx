@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 import React, { useState, useEffect, useMemo } from 'react';
-=======
-import React, { useState, useMemo } from 'react';
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
 import { 
   TrendingUp, Users, Banknote, Calendar, Car, BarChart3, 
   ArrowUpRight, AlertCircle, CheckCircle2, PieChart, Info,
@@ -12,7 +8,6 @@ import {
 import { motion } from 'motion/react';
 import { useApp } from '../lib/context';
 import { Sale, Payment } from '../types';
-<<<<<<< HEAD
 import { db, doc, setDoc, getDoc, getUserDocPath } from '../lib/firebase';
 
 interface AdminPerformanceDashboardProps {
@@ -21,18 +16,12 @@ interface AdminPerformanceDashboardProps {
 
 export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps> = ({ onShowToast }) => {
   const { sales, payments, userProfile, teamMembers, databaseUid } = useApp();
-=======
-
-export const AdminPerformanceDashboard: React.FC = () => {
-  const { sales, payments, userProfile, teamMembers } = useApp();
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
 
   // Filter States
   const [filterMonth, setFilterMonth] = useState<string>('all'); // 'all' or 'YYYY-MM'
   const [filterCommercial, setFilterCommercial] = useState<string>('all');
   const [viewFormat, setViewFormat] = useState<'table' | 'charts'>('table');
 
-<<<<<<< HEAD
   const [latePaymentDays, setLatePaymentDays] = useState<number>(5);
   const [isThresholdLoading, setIsThresholdLoading] = useState(false);
 
@@ -74,8 +63,6 @@ export const AdminPerformanceDashboard: React.FC = () => {
     }
   };
 
-=======
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
   // Filter Sales that belong to this Admin's company
   const companySales = useMemo(() => {
     if (!userProfile?.companyId) return [];
@@ -285,24 +272,15 @@ export const AdminPerformanceDashboard: React.FC = () => {
             <Filter size={16} className="text-slate-400" />
             <span>Filtrer par :</span>
           </div>
-<<<<<<< HEAD
 
           {/* Period Selector */}
-=======
-          
-          {/* Month Selector */}
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
           <div className="relative">
             <select
               value={filterMonth}
               onChange={(e) => setFilterMonth(e.target.value)}
               className="appearance-none bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold py-2.5 pl-3 pr-8 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
             >
-<<<<<<< HEAD
               <option value="all">Toutes les périodes</option>
-=======
-              <option value="all">Toutes les dates</option>
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
               {availableMonths.map(month => (
                 <option key={month} value={month}>{formatMonthLabel(month)}</option>
               ))}
@@ -448,11 +426,7 @@ export const AdminPerformanceDashboard: React.FC = () => {
                   viewFormat === 'charts' ? 'bg-white text-slate-800 shadow-sm font-extrabold' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-<<<<<<< HEAD
                 Graphique
-=======
-                Graphiques SVG
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
               </button>
             </div>
           </div>
@@ -510,7 +484,6 @@ export const AdminPerformanceDashboard: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-8 py-4 animate-fade-in flex-1">
-<<<<<<< HEAD
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
                 {/* Real SVG Curve and Area Graph */}
@@ -693,83 +666,6 @@ export const AdminPerformanceDashboard: React.FC = () => {
                   </div>
                 </div>
 
-=======
-              {/* Chart 1: Bar Chart of Turnover (CA) */}
-              <div>
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Volume d'Affaires (CA) par Commercial</h4>
-                <div className="relative bg-slate-50/50 rounded-2xl border border-slate-150 p-6">
-                  {commercialPerformance.length === 0 ? (
-                    <p className="text-center text-xs text-slate-400 py-6">Aucune donnée</p>
-                  ) : (
-                    <div className="space-y-4">
-                      {commercialPerformance.map((comm, idx) => {
-                        const maxVolume = Math.max(...commercialPerformance.map(c => c.volume), 1);
-                        const pct = (comm.volume / maxVolume) * 100;
-                        return (
-                          <div key={comm.name} className="space-y-1.5">
-                            <div className="flex justify-between items-center text-xs">
-                              <span className="font-extrabold text-slate-700 flex items-center gap-1.5">
-                                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: `hsl(${idx * 45}, 70%, 55%)` }}></span>
-                                {comm.name}
-                              </span>
-                              <span className="font-black text-slate-900">{comm.volume.toLocaleString('fr-FR')} € <span className="text-slate-400 font-bold">({comm.salesCount} ventes)</span></span>
-                            </div>
-                            <div className="w-full bg-white border border-slate-150 h-6 rounded-lg overflow-hidden flex shadow-inner">
-                              <div 
-                                className="h-full rounded-l-lg transition-all duration-75 bg-gradient-to-r"
-                                style={{ 
-                                  width: `${pct}%`,
-                                  backgroundImage: `linear-gradient(to right, hsl(${idx * 55}, 75%, 60%), hsl(${idx * 55}, 85%, 50%))`
-                                }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Chart 2: Stacked Recovery & Outstanding Chart */}
-              <div>
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Suivi du Recouvrement (Encaissé vs Reste à Payer)</h4>
-                <div className="bg-slate-50/50 rounded-2xl border border-slate-150 p-6 space-y-5">
-                  {commercialPerformance.length === 0 ? (
-                    <p className="text-center text-xs text-slate-400 py-6">Aucune donnée</p>
-                  ) : (
-                    commercialPerformance.map((comm) => {
-                      const total = comm.volume || 1;
-                      const paidPct = (comm.paid / total) * 100;
-                      const remPct = (comm.remaining / total) * 100;
-                      return (
-                        <div key={comm.name} className="space-y-2">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="font-extrabold text-slate-800">{comm.name}</span>
-                            <div className="flex gap-3 text-[10px] font-bold">
-                              <span className="text-emerald-600">Encaissé: {comm.paid.toLocaleString('fr-FR')} € ({Math.round(paidPct)}%)</span>
-                              <span className="text-amber-700">Reste: {comm.remaining.toLocaleString('fr-FR')} € ({Math.round(remPct)}%)</span>
-                            </div>
-                          </div>
-                          {/* Stacked Progress Bar */}
-                          <div className="w-full h-4 bg-slate-200 rounded-full overflow-hidden flex shadow-sm">
-                            <div 
-                              className="h-full bg-emerald-500 hover:opacity-90 transition-all"
-                              style={{ width: `${paidPct}%` }}
-                              title={`Encaissé: ${comm.paid.toLocaleString('fr-FR')} €`}
-                            />
-                            <div 
-                              className="h-full bg-amber-500 hover:opacity-90 transition-all"
-                              style={{ width: `${remPct}%` }}
-                              title={`Reste à payer: ${comm.remaining.toLocaleString('fr-FR')} €`}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
               </div>
             </div>
           )}
@@ -857,7 +753,6 @@ export const AdminPerformanceDashboard: React.FC = () => {
 
         {/* Outstanding client cases */}
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 lg:col-span-2">
-<<<<<<< HEAD
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-100">
             <div>
               <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
@@ -952,75 +847,6 @@ export const AdminPerformanceDashboard: React.FC = () => {
                 );
               });
             })()}
-=======
-          <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
-            <ShieldAlert size={18} className="text-amber-600" />
-            Dossiers Non Soldés Prioritaires
-          </h2>
-          <p className="text-slate-500 text-xs mt-0.5">Dossiers avec reste à payer supérieur à zéro depuis plus de 5 jours après achat.</p>
-
-          <div className="mt-4 divide-y divide-slate-100 max-h-[280px] overflow-y-auto">
-            {filteredSales.filter(s => {
-              // Calculate remaining
-              const salePayments = payments.filter(p => p.saleId === s.id);
-              const paidAmount = salePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-              const remaining = Math.max(0, (Number(s.price) || 0) + (Number(s.transport) || 0) - paidAmount);
-              
-              if (!s.date) return false;
-              const saleDate = new Date(s.date);
-              const today = new Date();
-              today.setHours(0,0,0,0);
-              saleDate.setHours(0,0,0,0);
-              const diffDays = Math.floor((today.getTime() - saleDate.getTime()) / (1000 * 60 * 60 * 24));
-              
-              return remaining > 0 && diffDays >= 5;
-            }).map(s => {
-              const salePayments = payments.filter(p => p.saleId === s.id);
-              const paidAmount = salePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-              const remaining = Math.max(0, (Number(s.price) || 0) + (Number(s.transport) || 0) - paidAmount);
-
-              const saleDate = new Date(s.date || '');
-              const today = new Date();
-              today.setHours(0,0,0,0);
-              saleDate.setHours(0,0,0,0);
-              const diffDays = Math.floor((today.getTime() - saleDate.getTime()) / (1000 * 60 * 60 * 24));
-
-              return (
-                <div key={s.id} className="py-3 flex items-center justify-between text-sm hover:bg-slate-50/50 px-2 rounded-lg transition-colors">
-                  <div className="flex flex-col">
-                    <div className="font-bold text-slate-800 flex items-center gap-2">
-                      {s.clientName || 'Client Inconnu'}
-                      <span className="bg-red-50 text-red-700 text-[10px] font-black border border-red-200/60 px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <Clock size={10} /> En retard : J+{diffDays}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-1.5">
-                      <span>BDC: #{s.bdcNumber}</span>
-                      <span>•</span>
-                      <span>{s.marque} {s.modele}</span>
-                      <span>•</span>
-                      <span className="font-bold text-slate-600">{s.commercial}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <div className="font-black text-amber-700">{remaining.toLocaleString('fr-FR')} €</div>
-                      <div className="text-[10px] text-slate-400">Restant sur {(Number(s.price) || 0).toLocaleString('fr-FR')} €</div>
-                    </div>
-                    <button 
-                      onClick={() => window.location.hash = `detail/${s.id}`}
-                      className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-all"
-                      title="Consulter"
-                    >
-                      <ChevronRight size={16} />
-                    </button>
-                  </div>
-                </div>
-              );
-            }).length === 0 ? (
-              <div className="py-12 text-center text-slate-400 font-bold">Aucun dossier en retard de paiement de plus de 5 jours ! 🎉</div>
-            ) : null}
->>>>>>> 4535b7a5962f9d901d0ea37bb29d8d24e3619118
           </div>
         </div>
 
