@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   ChevronLeft, Calendar, Edit2, Trash2, User, FileText, Send, 
   CreditCard, CheckCircle2, X, MessageCircle, Mail, Hash, Car,
-  CheckSquare
+  CheckSquare, Plane, MapPin, Store
 } from 'lucide-react';
 import { useApp } from '../lib/context';
 import { Payment, Sale } from '../types';
@@ -247,9 +247,16 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
                <CheckSquare size={16} /> Marquer Facturé
              </button>
           ) : (
-            <button onClick={() => handleUpdateField({ factureStatus: 'non_facture' })} className="flex items-center gap-2 text-slate-600 bg-slate-200 hover:bg-slate-300 px-3 py-2 rounded-md font-bold text-sm">
-               Annuler Facture
-             </button>
+            <>
+              <button onClick={() => handleUpdateField({ factureStatus: 'non_facture' })} className="flex items-center gap-2 text-slate-600 bg-slate-200 hover:bg-slate-300 px-3 py-2 rounded-md font-bold text-sm">
+                Annuler Facture
+              </button>
+              {sale.deliveryStatus !== 'livre' && (
+                <button onClick={() => window.location.hash = '#delivery_calendar?planSaleId=' + saleId} className="flex items-center justify-center gap-2 text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-2 rounded-md transition-colors font-bold text-sm shadow-sm">
+                  <Calendar size={16} /> {sale.deliveryStatus === 'programmee' ? 'Reprogrammer' : 'Programmer Livraison'}
+                </button>
+              )}
+            </>
           )}
 
           <select 
@@ -318,42 +325,7 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
         </div>
       )}
 
-      {showRefundForm && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-fade-in-up border-2 border-amber-100">
-            <h3 className="text-xl font-black text-slate-800 mb-4 pb-4 border-b border-slate-100">Détails du Remboursement</h3>
-            <form onSubmit={handleApplyRefund} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Montant Remboursé (€)</label>
-                <input type="number" step="0.01" required value={refundData.amount} onChange={e => setRefundData({...refundData, amount: e.target.value})} className="block w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Date</label>
-                  <input type="date" required value={refundData.date} onChange={e => setRefundData({...refundData, date: e.target.value})} className="block w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Moyen</label>
-                  <select required value={refundData.method} onChange={e => setRefundData({...refundData, method: e.target.value})} className="block w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none">
-                    <option value="VIR">Virement</option>
-                    <option value="CB">Carte Bancaire</option>
-                    <option value="CHQ">Chèque</option>
-                    <option value="ESP">Espèces</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Détails / Motif</label>
-                <textarea required value={refundData.details} onChange={e => setRefundData({...refundData, details: e.target.value})} className="block w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none min-h-[80px]" placeholder="Motif du remboursement..."></textarea>
-              </div>
-              <div className="flex justify-end gap-3 pt-4">
-                <button type="button" onClick={() => setShowRefundForm(false)} className="text-slate-600 font-bold hover:text-slate-800 px-4 py-2">Annuler</button>
-                <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-6 py-2 rounded-lg shadow-sm">Valider</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+
 
       {sale.factureStatus === 'rembourse' && (
         <div className="bg-amber-100 border-l-4 border-amber-500 rounded-r-lg p-4 mb-6 shadow-sm">
@@ -370,86 +342,150 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-        <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div className="flex flex-col">
-            <h3 className="font-black text-slate-800 text-2xl flex items-center space-x-3">
-              <User size={24} className="text-blue-600"/>
-              <span>{sale.clientName}</span>
-              <span className="text-sm bg-slate-200 text-slate-600 px-2 py-1 rounded ml-3 font-mono">BDC #{sale.bdcNumber}</span>
-            </h3>
-            <div className="mt-2 pl-9 flex items-center gap-3 flex-wrap">
-              {sale.phone && <a href={formatWhatsApp(sale.phone)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full text-xs font-bold"><MessageCircle size={14} className="mr-1.5" /> {sale.phone}</a>}
-              {sale.email && <span className="inline-flex items-center text-amber-700 bg-amber-100 px-3 py-1 rounded-full text-xs font-bold"><Mail size={14} className="mr-1.5" /> {sale.email}</span>}
-              {sale.ref && <span className="inline-flex items-center text-blue-700 bg-blue-100 px-3 py-1 rounded-full text-xs font-bold"><Hash size={14} className="mr-1" /> Réf: {sale.ref}</span>}
-            </div>
-            {((sale as any).address || (sale as any).zipCode || (sale as any).city) && (
-              <div className="mt-2.5 pl-9 flex flex-wrap items-center gap-1.5 text-slate-600 text-xs font-bold">
-                <span className="bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
-                  📍 {[(sale as any).address, (sale as any).zipCode, (sale as any).city].filter(Boolean).join(', ')}
-                </span>
+      {/* Main Layout Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Left Column: Details */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div className="flex flex-col">
+                <h3 className="font-black text-slate-800 text-2xl flex items-center space-x-3">
+                  <User size={24} className="text-blue-600"/>
+                  <span>{sale.clientName}</span>
+                  <span className="text-sm bg-slate-200 text-slate-600 px-2.5 py-1 rounded-md ml-3 font-mono">BDC #{sale.bdcNumber}</span>
+                </h3>
+                <div className="mt-2.5 flex items-center gap-3 flex-wrap">
+                  {sale.phone && <a href={formatWhatsApp(sale.phone)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"><MessageCircle size={14} className="mr-1.5" /> {sale.phone}</a>}
+                  {sale.email && <span className="inline-flex items-center text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg text-xs font-bold"><Mail size={14} className="mr-1.5" /> {sale.email}</span>}
+                  {sale.ref && <span className="inline-flex items-center text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg text-xs font-bold"><Hash size={14} className="mr-1" /> Réf: {sale.ref}</span>}
+                </div>
+                {((sale as any).address || (sale as any).zipCode || (sale as any).city) && (
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5 text-slate-600 text-xs font-bold">
+                    <span className="bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                      📍 {[(sale as any).address, (sale as any).zipCode, (sale as any).city].filter(Boolean).join(', ')}
+                    </span>
+                  </div>
+                )}
               </div>
-            )}
+              <div className="flex flex-col sm:items-end gap-2 shrink-0">
+                <span className={`px-4 py-1.5 rounded-lg text-sm font-black shadow-sm text-center ${sale.company === 'KDB AUTO' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>{sale.company}</span>
+                <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md">Vendeur: {sale.commercial}</span>
+                {sale.saleMode && (
+                  <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-slate-500 bg-slate-100 px-2 py-1.5 rounded-md shadow-sm border border-slate-200">
+                    {sale.saleMode === 'export' && <Plane size={14} className="text-blue-500" />}
+                    {sale.saleMode === 'locale' && <MapPin size={14} className="text-emerald-500" />}
+                    {sale.saleMode === 'marchand' && <Store size={14} className="text-purple-500" />}
+                    Vente {sale.saleMode}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="space-y-4">
+                 <h4 className="text-sm font-black text-slate-400 uppercase tracking-wider flex items-center gap-2"><Car size={16}/> Véhicule</h4>
+                 <div className="space-y-3">
+                   <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                     <span className="text-slate-500 font-medium text-sm">Modèle</span>
+                     <span className="font-black text-slate-800">{sale.marque} {sale.modele}</span>
+                   </div>
+                   <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                     <span className="text-slate-500 font-medium text-sm">Couleur</span>
+                     <span className="font-bold text-slate-700">{sale.color}</span>
+                   </div>
+                   <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                     <span className="text-slate-500 font-medium text-sm">Immatriculation</span>
+                     <span className="font-mono font-bold bg-slate-100 px-2 py-0.5 rounded text-slate-800">{sale.plaque || '-'}</span>
+                   </div>
+                 </div>
+               </div>
+               
+               <div className="space-y-4">
+                 <h4 className="text-sm font-black text-slate-400 uppercase tracking-wider opacity-0 hidden md:block">Infos</h4>
+                 <div className="space-y-3">
+                   <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                     <span className="text-slate-500 font-medium text-sm">Mise en Circ.</span>
+                     <span className="font-bold text-slate-700">{(sale as any).mec || '-'}</span>
+                   </div>
+                   <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                     <span className="text-slate-500 font-medium text-sm">VIN</span>
+                     <span className="font-mono text-xs text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">{sale.vin || 'Non renseigné'}</span>
+                   </div>
+                 </div>
+               </div>
+            </div>
           </div>
-          <div className="flex flex-col sm:items-end gap-2">
-            <span className={`px-4 py-1.5 rounded-full text-sm font-black shadow-sm text-center ${sale.company === 'KDB AUTO' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>{sale.company}</span>
-            <span className="text-xs font-bold text-slate-500">Commercial: {sale.commercial}</span>
+
+          {/* Notes Section */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-amber-50 px-6 py-4 border-b border-amber-100 flex justify-between items-center">
+              <h3 className="font-black text-amber-900 flex items-center space-x-2 text-sm uppercase tracking-wider">
+                <FileText size={16} className="text-amber-600"/>
+                <span>Notes & Suivi</span>
+              </h3>
+            </div>
+            <div className="p-6">
+               <div className="space-y-3 mb-6 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                 {(!sale.notes || sale.notes.length === 0) ? (
+                   <div className="text-center py-6 bg-slate-50 rounded-xl border border-slate-100 border-dashed">
+                     <p className="text-sm text-slate-400 font-medium">Aucune note enregistrée pour ce dossier.</p>
+                   </div>
+                 ) : (
+                   sale.notes.map(note => (
+                     <div key={note.id} className="bg-white p-4 rounded-xl border border-amber-100 shadow-sm flex flex-col hover:border-amber-200 transition-colors">
+                       <span className="text-[10px] text-slate-400 font-black mb-1.5 uppercase tracking-wider">{new Date(note.date).toLocaleString('fr-FR')}</span>
+                       <p className="text-sm text-slate-700 font-medium leading-relaxed">{note.text}</p>
+                     </div>
+                   ))
+                 )}
+               </div>
+               <form onSubmit={handleAddNote} className="flex gap-2">
+                 <input type="text" value={noteInput} onChange={(e) => setNoteInput(e.target.value)} placeholder="Écrire une note ou une information..." className="flex-1 p-3 text-sm font-medium border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none transition-shadow" />
+                 <button type="submit" disabled={!noteInput.trim()} className="bg-amber-500 hover:bg-amber-600 text-white px-6 py-3 rounded-xl text-sm font-black transition-colors disabled:opacity-50 shadow-sm">Ajouter</button>
+               </form>
+            </div>
           </div>
         </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
-           <div className="p-0 border-r border-slate-100">
-            <table className="w-full text-sm">
-              <tbody>
-                <tr className="border-b border-slate-100"><td className="py-4 px-6 font-bold text-slate-500 bg-slate-50 w-1/3">Véhicule</td><td className="py-4 px-6 font-black text-blue-900 text-base">{sale.marque} {sale.modele} <span className="text-xs text-slate-500 font-bold ml-1">({sale.color})</span></td></tr>
-                <tr className="border-b border-slate-100"><td className="py-4 px-6 font-bold text-slate-500 bg-slate-50">M.E.C / Année</td><td className="py-4 px-6 text-slate-800 font-bold text-sm">{(sale as any).mec || '-'}</td></tr>
-                <tr>
-                  <td className="py-4 px-6 font-bold text-slate-500 bg-slate-50">Immat / VIN</td>
-                  <td className="py-4 px-6 text-slate-800 font-mono text-sm font-bold flex flex-col gap-1">
-                    <span>{sale.plaque || '-'}</span>
-                    <span className="text-slate-500 font-normal text-xs break-all bg-slate-100 px-2 py-1 rounded">{sale.vin || 'Non renseigné'}</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div className="p-0 flex flex-col items-center justify-center bg-blue-50/30">
-             <div className="text-center group">
-               <p className="text-sm font-bold text-slate-500 mb-1">TOTAL FACTURÉ HT</p>
-               <p className="text-4xl font-black text-blue-900 whitespace-nowrap">{(Number(sale.price) + Number(sale.transport || 0)).toLocaleString()} €</p>
+
+        {/* Right Column: Finance */}
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+             <div className="p-6 flex-1 flex flex-col items-center justify-center bg-gradient-to-b from-blue-50/50 to-transparent border-b border-slate-100 relative">
+               {sale.discountAmount && sale.discountAmount > 0 ? (
+                 <div className="absolute top-4 right-4 bg-red-100 text-red-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
+                   Remise : -{sale.discountAmount} €
+                 </div>
+               ) : null}
+               {sale.saleMode === 'locale' ? (
+                 <div className="absolute top-4 left-4 bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
+                   HT : {(Number(sale.price) / (1 + (sale.tvaRate || 20) / 100)).toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} €
+                 </div>
+               ) : null}
+               {sale.initialPrice && sale.initialPrice > 0 && sale.initialPrice !== sale.price ? (
+                  <p className="text-xs font-bold text-slate-400 line-through mb-1">{sale.initialPrice.toLocaleString()} €</p>
+               ) : null}
+               <p className="text-xs font-black text-blue-500 uppercase tracking-widest mb-2">
+                 Total Facturé {sale.saleMode === 'locale' ? 'TTC' : 'HT'}
+               </p>
+               <p className="text-5xl font-black text-blue-950 whitespace-nowrap tracking-tight">{(Number(sale.price) + Number(sale.transport || 0)).toLocaleString()} €</p>
+             </div>
+             
+             <div className="p-6 grid grid-cols-2 gap-4 bg-slate-50/50">
+               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                 <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Encaissé</p>
+                 <p className="text-xl font-black text-emerald-600">{totalPaid.toLocaleString()} €</p>
+               </div>
+               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                 <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Reste à payer</p>
+                 <p className={`text-xl font-black ${remaining <= 0 ? 'text-slate-300' : 'text-red-600'}`}>{remaining.toLocaleString()} €</p>
+               </div>
              </div>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mt-6">
-        <div className="bg-amber-50 px-6 py-3 border-b border-amber-200 flex justify-between items-center">
-          <h3 className="font-bold text-amber-900 flex items-center space-x-2 text-sm">
-            <FileText size={16} className="text-amber-600"/>
-            <span>Notes et Suivi de dossier</span>
-          </h3>
-        </div>
-        <div className="p-5 bg-amber-50/30">
-           <div className="space-y-3 mb-4 max-h-48 overflow-y-auto pr-2">
-             {(!sale.notes || sale.notes.length === 0) ? (
-               <p className="text-sm text-slate-500 italic">Aucune note enregistrée pour ce dossier.</p>
-             ) : (
-               sale.notes.map(note => (
-                 <div key={note.id} className="bg-white p-3 rounded-lg border border-amber-100 shadow-sm flex flex-col">
-                   <span className="text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">{new Date(note.date).toLocaleString('fr-FR')}</span>
-                   <p className="text-sm text-slate-800 font-medium">{note.text}</p>
-                 </div>
-               ))
-             )}
-           </div>
-           <form onSubmit={handleAddNote} className="flex gap-2">
-             <input type="text" value={noteInput} onChange={(e) => setNoteInput(e.target.value)} placeholder="Écrire une note ou une information..." className="flex-1 p-2.5 text-sm font-medium border border-slate-300 rounded-md focus:ring-2 focus:ring-amber-500 outline-none" />
-             <button type="submit" disabled={!noteInput.trim()} className="bg-amber-500 hover:bg-amber-600 text-white px-5 py-2.5 rounded-md text-sm font-bold transition-colors disabled:opacity-50">Ajouter</button>
-           </form>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mt-6">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mt-6">
         <div className="bg-slate-900 px-6 py-4 flex justify-between items-center">
           <h3 className="font-bold text-white flex items-center space-x-2 text-lg">
             <CreditCard size={20} className="text-emerald-400"/>

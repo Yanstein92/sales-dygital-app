@@ -21,7 +21,8 @@ const processPDFFile = async (
   setDraftExtraction: (data: any) => void, 
   setCurrentView: (view: string) => void,
   showToast: (msg: string, type?: 'success'|'error') => void,
-  setIsLoading: (val: boolean) => void
+  setIsLoading: (val: boolean) => void,
+  userProfile?: any
 ) => {
   setIsLoading(true);
   try {
@@ -171,7 +172,7 @@ const processPDFFile = async (
       marque, modele, color, vin, plaque, mec,
       price: price ? price.toString() : (existingSale ? existingSale.price.toString() : ''), 
       date: dateFormatted, 
-      commercial: existingSale ? (existingSale.commercial || 'À assigner') : 'À assigner', 
+      commercial: existingSale ? (existingSale.commercial || 'À assigner') : (userProfile?.name || 'À assigner'), 
       phone: phone || (existingSale ? (existingSale.phone || '') : ''), 
       email: email || (existingSale ? (existingSale.email || '') : ''), 
       ref: existingSale ? (existingSale.ref || '') : '', 
@@ -232,8 +233,16 @@ const MainAppContent: React.FC = () => {
         setCurrentView('detail');
       } else if (hash === '#pdf_validation') {
         setCurrentView('pdf_validation');
-      } else if (hash === '#delivery_calendar') {
+      } else if (hash.startsWith('#delivery_calendar')) {
         setCurrentView('delivery_calendar');
+      } else if (hash === '#team_management') {
+        setCurrentView('team_management');
+      } else if (hash === '#company_management') {
+        if (userProfile?.role === 'admin') {
+          setCurrentView('company_management');
+        } else {
+          window.location.hash = 'dashboard';
+        }
       } else if (hash === '#perf_dashboard') {
         if (userProfile?.role === 'admin') {
           setCurrentView('perf_dashboard');
@@ -595,61 +604,7 @@ const MainAppContent: React.FC = () => {
                           <button 
                             onClick={() => {
                               setShowProfileMenu(false);
-                              setIsEditingCompany(true);
-                              const newName = window.prompt("Saisir le nouveau nom de l'entreprise :", userProfile.companyId);
-                              if (newName && newName.trim() && newName.trim() !== userProfile.companyId) {
-                                setNewCompanyName(newName);
-                                const triggerRename = async () => {
-                                  try {
-                                    setIsLoading(true);
-                                    const newNameTrimmed = newName.trim();
-                                    const promises = teamMembers.flatMap(member => [
-                                      fetch(`/api/users/${member.uid}`, {
-                                        method: 'PUT',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ companyId: newNameTrimmed })
-                                      }),
-                                      setDoc(doc(db, getUserDocPath(member.uid)), { companyId: newNameTrimmed }, { merge: true })
-                                    ]);
-                                    if (userAuth?.uid) {
-                                      promises.push(
-                                        fetch(`/api/users/${userAuth.uid}`, {
-                                          method: 'PUT',
-                                          headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ companyId: newNameTrimmed })
-                                        }),
-                                        setDoc(doc(db, getUserDocPath(userAuth.uid)), { 
-                                          ...userProfile, 
-                                          companyId: newNameTrimmed,
-                                          uid: userAuth.uid,
-                                          email: userAuth.email || '',
-                                          name: userProfile?.name || 'Utilisateur',
-                                          role: userProfile?.role || 'admin'
-                                        }, { merge: true })
-                                      );
-                                    }
-                                    await Promise.all(promises);
-                                    showToast("Nom de l'entreprise mis à jour", "success");
-                                    setTimeout(() => window.location.reload(), 800);
-                                  } catch (err) {
-                                    showToast("Erreur lors de la mise à jour", "error");
-                                  } finally {
-                                    setIsLoading(false);
-                                  }
-                                };
-                                triggerRename();
-                              }
-                            }}
-                            className="flex items-center gap-2 px-2.5 py-2 hover:bg-slate-50 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-bold transition-all text-left"
-                          >
-                            <Edit2 size={14} className="text-slate-500" />
-                            <span>Renommer l'entreprise</span>
-                          </button>
-
-                          <button 
-                            onClick={() => {
-                              setShowProfileMenu(false);
-                              setShowTeam(true);
+                              window.location.hash = 'team_management';
                             }}
                             className="flex items-center gap-2 px-2.5 py-2 hover:bg-slate-50 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-bold transition-all text-left"
                           >
@@ -660,12 +615,12 @@ const MainAppContent: React.FC = () => {
                           <button 
                             onClick={() => {
                               setShowProfileMenu(false);
-                              setShowManageCompanies(true);
+                              window.location.hash = 'company_management';
                             }}
                             className="flex items-center gap-2 px-2.5 py-2 hover:bg-slate-50 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-bold transition-all text-left"
                           >
                             <Car size={14} className="text-slate-500" />
-                            <span>Gérer mes filiales</span>
+                            <span>Gestion des Entreprises</span>
                           </button>
                         </>
                       )}
@@ -735,17 +690,10 @@ const MainAppContent: React.FC = () => {
                     />
                   </form>
                 ) : (
-                  <div 
-                    className={`flex items-center gap-1.5 ${userProfile?.role === 'admin' ? 'cursor-pointer hover:text-slate-900 transition-colors py-0.5' : ''}`}
-                    onClick={() => userProfile?.role === 'admin' && setIsEditingCompany(true)}
-                    title={userProfile?.role === 'admin' ? "Renommer l'entreprise" : ""}
-                  >
-                    <span className="text-sm font-black text-slate-800 group-hover:text-blue-600 transition-colors">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-black text-slate-800">
                       {userProfile?.companyId || 'Entreprise'}
                     </span>
-                    {userProfile?.role === 'admin' && (
-                      <Edit2 size={11} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    )}
                   </div>
                 )}
               </div>
@@ -791,9 +739,7 @@ const MainAppContent: React.FC = () => {
           </div>
         </header>
 
-        {showTeam && <TeamManagement onClose={() => setShowTeam(false)} onShowToast={showToast} />}
         {showSuperAdmin && <SuperAdmin onClose={() => setShowSuperAdmin(false)} onShowToast={showToast} />}
-        {showManageCompanies && <CompanyManagement onClose={() => setShowManageCompanies(false)} onShowToast={showToast} />}
 
         {/* FLUID WORKSPACE (No boxed max-width restrictions!) */}
         <main className="flex-1 overflow-y-auto bg-slate-50 p-6">
@@ -807,9 +753,9 @@ const MainAppContent: React.FC = () => {
               {currentView === 'dashboard' && (
                 <Dashboard 
                   onSelectSale={(id) => window.location.hash = `detail/${id}`} 
-                  onProcessPdf={(f) => processPDFFile(f, sales, setDraftExtraction, (view) => window.location.hash = view, showToast, setIsLoading)}
+                  onProcessPdf={(f) => processPDFFile(f, sales, setDraftExtraction, (view) => window.location.hash = view, showToast, setIsLoading, userProfile)}
                   onManualEntry={() => {
-                    setDraftExtraction({ isManual: true, bdcNumber: '', company: 'KDB AUTO', clientName: '', marque: '', modele: '', color: '', vin: '', plaque: '', mec: '', price: '', date: new Date().toISOString().split('T')[0], commercial: 'À assigner', phone: '', email: '', ref: '', address: '', zipCode: '', city: '', draftPayments: [] });
+                    setDraftExtraction({ isManual: true, bdcNumber: '', company: userProfile?.companyId || 'KDB AUTO', clientName: '', marque: '', modele: '', color: '', vin: '', plaque: '', mec: '', price: '', date: new Date().toISOString().split('T')[0], commercial: userProfile?.name || 'À assigner', phone: '', email: '', ref: '', address: '', zipCode: '', city: '', draftPayments: [] });
                     window.location.hash = 'pdf_validation';
                   }}
                 />
@@ -844,6 +790,12 @@ const MainAppContent: React.FC = () => {
                     window.location.hash = `detail/${saleId}`;
                   }}
                 />
+              )}
+              {currentView === 'team_management' && (
+                <TeamManagement onShowToast={showToast} />
+              )}
+              {currentView === 'company_management' && (
+                <CompanyManagement onClose={() => window.location.hash = 'dashboard'} onShowToast={showToast} />
               )}
             </div>
           )}

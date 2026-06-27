@@ -19,6 +19,66 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
   const [isLoading, setIsLoading] = useState(false);
   const [draft, setDraft] = useState(draftExtraction);
 
+  const [initialPrice, setInitialPrice] = useState<number | ''>(draft.initialPrice || draft.price || '');
+  const [discountAmount, setDiscountAmount] = useState<number | ''>(draft.discountAmount || '');
+  const [price, setPrice] = useState<number | ''>(draft.price || '');
+  const [saleMode, setSaleMode] = useState<string>(draft.saleMode || 'export');
+  const [tvaRate, setTvaRate] = useState<number | ''>(draft.tvaRate ?? 20);
+
+  const handleInitialPriceChange = (val: string) => {
+    const num = parseFloat(val);
+    setInitialPrice(val === '' ? '' : num);
+    if (!isNaN(num)) {
+      const disc = typeof discountAmount === 'number' ? discountAmount : 0;
+      setPrice(Number((num - disc).toFixed(2)));
+    }
+  };
+
+  const handleInitialPriceHTChange = (val: string) => {
+    if (val === '') {
+      setInitialPrice('');
+      setPrice('');
+      return;
+    }
+    const ht = parseFloat(val);
+    if (!isNaN(ht)) {
+      const rate = typeof tvaRate === 'number' ? tvaRate : 20;
+      const ttc = Number((ht * (1 + rate / 100)).toFixed(2));
+      setInitialPrice(ttc);
+      const disc = typeof discountAmount === 'number' ? discountAmount : 0;
+      setPrice(Number((ttc - disc).toFixed(2)));
+    }
+  };
+
+  const handleTvaChange = (val: string) => {
+    const newRate = val === '' ? '' : parseFloat(val);
+    const oldRate = typeof tvaRate === 'number' ? tvaRate : 20;
+    setTvaRate(newRate);
+    if (saleMode === 'locale' && typeof initialPrice === 'number' && typeof newRate === 'number') {
+      const ht = initialPrice / (1 + oldRate / 100);
+      const newTtc = Number((ht * (1 + newRate / 100)).toFixed(2));
+      setInitialPrice(newTtc);
+      const disc = typeof discountAmount === 'number' ? discountAmount : 0;
+      setPrice(Number((newTtc - disc).toFixed(2)));
+    }
+  };
+
+  const handleDiscountChange = (val: string) => {
+    const num = parseFloat(val);
+    setDiscountAmount(val === '' ? '' : num);
+    if (!isNaN(num) && typeof initialPrice === 'number') {
+      setPrice(Number((initialPrice - num).toFixed(2)));
+    }
+  };
+
+  const handlePriceChange = (val: string) => {
+    const num = parseFloat(val);
+    setPrice(val === '' ? '' : num);
+    if (!isNaN(num) && typeof initialPrice === 'number') {
+      setDiscountAmount(Number((initialPrice - num).toFixed(2)));
+    }
+  };
+
   const isEditing = !!draft.id;
   const isExistingWarning = !isEditing && !draft.isManual && sales.some(s => s.company === draft.company && String(s.bdcNumber) === draft.bdcNumber && draft.bdcNumber !== '');
 
@@ -58,7 +118,11 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
       ref: (fd.get('ref') as string) || '',
       address: String(fd.get('address') || '').trim(),
       zipCode: String(fd.get('zipCode') || '').trim(),
-      city: String(fd.get('city') || '').trim()
+      city: String(fd.get('city') || '').trim(),
+      saleMode: (fd.get('saleMode') as string) || 'locale',
+      tvaRate: parseFloat(fd.get('tvaRate') as string) || 20,
+      initialPrice: parseFloat(fd.get('initialPrice') as string) || parseFloat(fd.get('price') as string) || 0,
+      discountAmount: parseFloat(fd.get('discountAmount') as string) || 0
     };
 
     let targetId = draft.id;
@@ -120,14 +184,27 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
         <ChevronLeft size={20} /><span>Annuler {isEditing ? 'la modification' : 'la saisie'}</span>
       </button>
 
-      <div className="bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden">
-        <div className="bg-purple-900 px-8 py-6 text-white flex items-start gap-4">
-          <div className="bg-purple-800 p-3 rounded-lg">{isEditing ? <Edit2 size={32} className="text-purple-300" /> : <Plus size={32} className="text-purple-300" />}</div>
+      {/* Header */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 rounded-2xl p-6 md:p-8 text-white shadow-lg relative overflow-hidden">
+        <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-10 bg-[radial-gradient(circle_at_top_right,var(--color-indigo-400),transparent_50%)] pointer-events-none" />
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-black mb-1">{isEditing ? 'Modification du dossier' : 'Création manuelle de dossier'}</h2>
-            <p className="text-purple-200 text-sm font-medium">{isEditing ? 'Modifiez les informations du client et du véhicule ci-dessous.' : 'Veuillez saisir les informations du véhicule et du client.'}</p>
+            <div className="flex items-center gap-2 text-indigo-400 text-xs font-black uppercase tracking-widest mb-1.5">
+              <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+              Administration
+            </div>
+            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white flex items-center gap-2">
+              {isEditing ? <Edit2 className="text-indigo-400" size={28} /> : <Plus className="text-indigo-400" size={28} />} 
+              {isEditing ? 'Modification du dossier' : 'Création manuelle de dossier'}
+            </h1>
+            <p className="text-slate-300 text-xs md:text-sm mt-1.5 font-medium max-w-xl leading-relaxed">
+              {isEditing ? 'Modifiez les informations du client et du véhicule ci-dessous.' : 'Veuillez saisir les informations du véhicule et du client.'}
+            </p>
           </div>
         </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         
         {isExistingWarning && (
            <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mx-8 mt-6 flex gap-3">
@@ -230,17 +307,63 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
           <div className="pt-6 border-t border-slate-200">
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div>
-                   <h3 className="text-sm font-black uppercase text-slate-500 tracking-wider flex items-center gap-2 mb-4">Commercial & Prix</h3>
-                   <div className="grid grid-cols-2 gap-4">
+                   <h3 className="text-sm font-black uppercase text-slate-500 tracking-wider flex items-center gap-2 mb-4">Détails de la Vente</h3>
+                   <div className="grid grid-cols-2 gap-4 mb-4">
                       <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">Vendeur assigné <span className="text-red-500">*</span></label>
-                        <select name="commercial" defaultValue={draft.commercial} className="w-full p-3 border border-slate-300 rounded-md font-medium focus:ring-2 focus:ring-purple-500 outline-none text-sm">
-                          {commerciaux.map(c => <option key={c} value={c}>{c}</option>)}
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Mode de vente</label>
+                        <select name="saleMode" value={saleMode} onChange={(e) => setSaleMode(e.target.value)} className="w-full p-2 border border-slate-300 rounded-md font-medium focus:ring-2 focus:ring-purple-500 outline-none text-sm bg-white">
+                          <option value="locale">Vente Locale</option>
+                          <option value="export">Vente Export</option>
+                          <option value="marchand">Vente Marchand</option>
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs font-black text-purple-900 mb-1">Prix de vente net HT (€) <span className="text-red-500">*</span></label>
-                        <input type="number" name="price" required min="0" step="0.01" defaultValue={draft.price} className="w-full p-3 border-2 border-purple-300 bg-purple-50 rounded-md text-right font-black text-xl text-purple-900 focus:border-purple-600 focus:ring-0 outline-none" />
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Vendeur assigné <span className="text-red-500">*</span></label>
+                        <select name="commercial" defaultValue={draft.commercial} className="w-full p-2 border border-slate-300 rounded-md font-medium focus:ring-2 focus:ring-purple-500 outline-none text-sm bg-white">
+                          {commerciaux.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                   </div>
+
+                   <h3 className="text-sm font-black uppercase text-slate-500 tracking-wider flex items-center gap-2 mb-4 mt-6">Tarification & Remises</h3>
+                   <div className="grid grid-cols-1 gap-4">
+                      {saleMode === 'locale' && (
+                        <div className="flex items-center gap-4 bg-purple-50 p-3 rounded-lg border border-purple-100">
+                          <label className="block text-xs font-bold text-purple-900">TVA Applicable (%) :</label>
+                          <input type="number" name="tvaRate" value={tvaRate} onChange={e => handleTvaChange(e.target.value)} className="w-20 p-1.5 border border-purple-200 rounded text-right font-bold text-sm outline-none" />
+                        </div>
+                      )}
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        {saleMode === 'locale' && (
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Prix Initial HT (€)
+                            </label>
+                            <input type="number" min="0" step="0.01" value={typeof initialPrice === 'number' ? Number((initialPrice / (1 + (typeof tvaRate === 'number' ? tvaRate : 20) / 100)).toFixed(2)) : ''} onChange={(e) => handleInitialPriceHTChange(e.target.value)} placeholder="Ex: 12500" className="w-full p-2 border border-slate-300 rounded-md text-right font-bold text-slate-700 outline-none focus:ring-2 focus:ring-purple-500" />
+                          </div>
+                        )}
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">
+                            Prix Initial {saleMode === 'locale' ? 'TTC' : 'HT'} (€)
+                          </label>
+                          <input type="number" name="initialPrice" min="0" step="0.01" value={initialPrice} onChange={(e) => handleInitialPriceChange(e.target.value)} placeholder="Ex: 15000" className="w-full p-2 border border-slate-300 rounded-md text-right font-bold text-slate-700 outline-none focus:ring-2 focus:ring-purple-500" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">
+                            Remise Accordée {saleMode === 'locale' ? 'TTC' : 'HT'} (€)
+                          </label>
+                          <input type="number" name="discountAmount" min="0" step="0.01" value={discountAmount} onChange={(e) => handleDiscountChange(e.target.value)} placeholder="Ex: 500" className="w-full p-2 border border-slate-300 rounded-md text-right font-bold text-red-600 outline-none focus:ring-2 focus:ring-purple-500" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-black text-purple-900 mb-1">
+                          Prix de vente final {saleMode === 'locale' ? 'TTC' : 'HT'} (€) <span className="text-red-500">*</span>
+                        </label>
+                        <input type="number" name="price" required min="0" step="0.01" value={price} onChange={(e) => handlePriceChange(e.target.value)} className="w-full p-3 border-2 border-purple-300 bg-purple-50 rounded-md text-right font-black text-xl text-purple-900 focus:border-purple-600 focus:ring-0 outline-none" />
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          Saisissez le prix final {saleMode === 'locale' ? 'TTC' : 'HT'} qui sera facturé (après remise éventuelle).
+                        </p>
                       </div>
                    </div>
                 </div>

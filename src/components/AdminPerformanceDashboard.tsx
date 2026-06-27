@@ -21,6 +21,7 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
   const [filterMonth, setFilterMonth] = useState<string>('all'); // 'all' or 'YYYY-MM'
   const [filterCommercial, setFilterCommercial] = useState<string>('all');
   const [viewFormat, setViewFormat] = useState<'table' | 'charts'>('table');
+  const [showDiscounts, setShowDiscounts] = useState<boolean>(false);
 
   const [latePaymentDays, setLatePaymentDays] = useState<number>(5);
   const [isThresholdLoading, setIsThresholdLoading] = useState(false);
@@ -104,12 +105,15 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
     let totalPaid = 0;
     let totalRefunded = 0;
     let totalTransport = 0;
+    let totalDiscount = 0;
 
     filteredSales.forEach(s => {
       const price = Number(s.price) || 0;
       const transport = Number(s.transport) || 0;
+      const discount = Number(s.discountAmount) || 0;
       totalCA += price + transport;
       totalTransport += transport;
+      totalDiscount += discount;
 
       // Handle refunds
       if (s.factureStatus === 'rembourse' && s.refundAmount) {
@@ -133,13 +137,14 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
       remainingToCollect,
       averageBasket,
       totalTransport,
+      totalDiscount,
       count: filteredSales.length
     };
   }, [filteredSales, filteredPayments]);
 
   // Analytics: Sales & Revenue by Commercial
   const commercialPerformance = useMemo(() => {
-    const data: Record<string, { name: string; salesCount: number; volume: number; paid: number; remaining: number }> = {};
+    const data: Record<string, { name: string; salesCount: number; volume: number; paid: number; remaining: number; discounts: number }> = {};
     
     // Initialize with team members so everyone is represented
     teamMembers.forEach(member => {
@@ -148,7 +153,8 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
         salesCount: 0,
         volume: 0,
         paid: 0,
-        remaining: 0
+        remaining: 0,
+        discounts: 0
       };
     });
 
@@ -156,14 +162,16 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
     filteredSales.forEach(s => {
       const comm = s.commercial || 'À assigner';
       if (!data[comm]) {
-        data[comm] = { name: comm, salesCount: 0, volume: 0, paid: 0, remaining: 0 };
+        data[comm] = { name: comm, salesCount: 0, volume: 0, paid: 0, remaining: 0, discounts: 0 };
       }
       const price = Number(s.price) || 0;
       const transport = Number(s.transport) || 0;
+      const discount = Number(s.discountAmount) || 0;
       const totalSaleVal = price + transport;
       
       data[comm].salesCount += 1;
       data[comm].volume += totalSaleVal;
+      data[comm].discounts += discount;
       
       // Calculate payment for this specific sale
       const salePayments = payments.filter(p => p.saleId === s.id);
@@ -432,13 +440,15 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
           </div>
 
           {viewFormat === 'table' ? (
-            <div className="flex-1 overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+            <>
+              <div className="flex-1 overflow-x-auto">
+                <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-100 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                     <th className="py-3 px-2">Commercial</th>
                     <th className="py-3 px-2 text-center">Dossiers</th>
                     <th className="py-3 px-2 text-right">Volume (CA)</th>
+                    {showDiscounts && <th className="py-3 px-2 text-right text-red-500">Remises</th>}
                     <th className="py-3 px-2 text-right">Encaissé</th>
                     <th className="py-3 px-2 text-right text-amber-700">Reste à payer</th>
                     <th className="py-3 px-2 text-right w-1/4">Répartition</th>
@@ -447,7 +457,7 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
                 <tbody className="divide-y divide-slate-50 text-sm">
                   {commercialPerformance.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-400 font-bold">Aucun commercial n'a de vente enregistrée sur cette période.</td>
+                      <td colSpan={showDiscounts ? 7 : 6} className="py-8 text-center text-slate-400 font-bold">Aucun commercial n'a de vente enregistrée sur cette période.</td>
                     </tr>
                   ) : (
                     commercialPerformance.map(comm => {
@@ -462,6 +472,7 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
                           </td>
                           <td className="py-3 px-2 text-center font-black text-slate-700">{comm.salesCount}</td>
                           <td className="py-3 px-2 text-right font-black text-slate-900">{comm.volume.toLocaleString('fr-FR')} €</td>
+                          {showDiscounts && <td className="py-3 px-2 text-right text-red-600 font-extrabold">{comm.discounts > 0 ? `-${comm.discounts.toLocaleString('fr-FR')} €` : '-'}</td>}
                           <td className="py-3 px-2 text-right text-emerald-600 font-extrabold">{comm.paid.toLocaleString('fr-FR')} €</td>
                           <td className="py-3 px-2 text-right text-amber-700 font-extrabold">{comm.remaining.toLocaleString('fr-FR')} €</td>
                           <td className="py-3 px-2 text-right">
@@ -482,6 +493,18 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
                 </tbody>
               </table>
             </div>
+            <div className="flex justify-end mt-4">
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-500 cursor-pointer hover:text-slate-700 transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={showDiscounts} 
+                  onChange={(e) => setShowDiscounts(e.target.checked)}
+                  className="rounded border-slate-300 text-purple-600 focus:ring-purple-500 bg-white cursor-pointer"
+                />
+                Afficher le détail des remises (manque à gagner)
+              </label>
+            </div>
+            </>
           ) : (
             <div className="space-y-8 py-4 animate-fade-in flex-1">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

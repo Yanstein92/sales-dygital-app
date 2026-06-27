@@ -16,8 +16,8 @@ import {
   collection,
   onSnapshot,
   doc,
-  setDoc,
-  deleteDoc,
+  setDoc as firebaseSetDoc,
+  deleteDoc as firebaseDeleteDoc,
   getDoc,
   updateDoc,
   query,
@@ -126,6 +126,64 @@ export const getUserPath = (colName: string, userId: string) =>
 
 export const getUserDocPath = (userId: string) => 
   isCanvasEnvironment ? `artifacts/${appId}/users/${userId}` : `users/${userId}`;
+
+async function setDoc(docRef: any, data: any, options?: any) {
+  try {
+    await firebaseSetDoc(docRef, data, options);
+  } catch (error: any) {
+    console.warn("Client-side setDoc failed. Falling back to server database proxy...", error);
+    const path = docRef?.parent?.path || '';
+    const docId = docRef?.id || '';
+    if (path && docId) {
+      try {
+        const res = await fetch('/api/db/set', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path, docId, data, merge: options?.merge !== false })
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || "Erreur de proxy de base de données");
+        }
+        console.log("Server-side setDoc fallback succeeded!");
+        return;
+      } catch (proxyError: any) {
+        console.error("Server-side fallback also failed:", proxyError);
+        throw error;
+      }
+    }
+    throw error;
+  }
+}
+
+async function deleteDoc(docRef: any) {
+  try {
+    await firebaseDeleteDoc(docRef);
+  } catch (error: any) {
+    console.warn("Client-side deleteDoc failed. Falling back to server database proxy...", error);
+    const path = docRef?.parent?.path || '';
+    const docId = docRef?.id || '';
+    if (path && docId) {
+      try {
+        const res = await fetch('/api/db/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path, docId })
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || "Erreur de proxy de base de données");
+        }
+        console.log("Server-side deleteDoc fallback succeeded!");
+        return;
+      } catch (proxyError: any) {
+        console.error("Server-side fallback also failed:", proxyError);
+        throw error;
+      }
+    }
+    throw error;
+  }
+}
 
 export {
   app,

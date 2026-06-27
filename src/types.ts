@@ -56,6 +56,12 @@ export interface Sale {
   zipCode?: string;
   city?: string;
 
+  // Configuration de la Vente
+  saleMode?: string; // e.g., 'locale', 'export', 'marchand'
+  tvaRate?: number;
+  initialPrice?: number;
+  discountAmount?: number;
+
   // Champs de livraison & calendrier
   deliveryDate?: string; // YYYY-MM-DD
   deliverySlot?: string; // ex: "10:00 - 11:00"
@@ -70,6 +76,7 @@ export interface CompanyDetails {
   logoUrl?: string;
   email?: string;
   phone?: string;
+  isSubsidiary?: boolean;
 }
 
 export interface UserProfile {

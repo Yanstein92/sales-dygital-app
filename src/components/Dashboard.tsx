@@ -3,7 +3,7 @@ import {
   User, Building2, Banknote, Search, UploadCloud, Plus, X, 
   ArrowUpDown, ChevronUp, ChevronDown, Clock, CheckCircle2, 
   Car, MessageCircle, Mail, Hash, CreditCard, ChevronRight,
-  RotateCcw
+  RotateCcw, Plane, MapPin, Store
 } from 'lucide-react';
 import { db, doc, setDoc, getDoc, getUserPath, getUserDocPath } from '../lib/firebase';
 import { useApp } from '../lib/context';
@@ -219,6 +219,25 @@ export const Dashboard: React.FC<{
 
   return (
     <div className="space-y-6 animate-fade-in-up">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+        <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-10 bg-[radial-gradient(circle_at_top_right,var(--color-indigo-400),transparent_50%)] pointer-events-none" />
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-indigo-400 text-xs font-black uppercase tracking-widest mb-1.5">
+              <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+              Espace {userProfile?.role === 'admin' || userProfile?.role === 'superadmin' ? 'Direction' : 'Commercial'}
+            </div>
+            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white flex items-center gap-2">
+              Dossiers & Ventes
+            </h1>
+            <p className="text-slate-300 text-xs md:text-sm mt-1.5 font-medium max-w-xl leading-relaxed">
+              Gérez l'ensemble de vos dossiers clients, suivez l'évolution de vos ventes et centralisez vos documents.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* BARRE D'ACTIONS AVEC DROPZONE */}
       <div 
         onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
@@ -395,6 +414,13 @@ export const Dashboard: React.FC<{
                       <div className="font-mono text-xs font-bold text-slate-500 mt-1">
                         #{sale.bdcNumber}
                       </div>
+                      {sale.saleMode && (
+                        <div className="mt-2 flex items-center gap-1.5 text-[10px] font-black tracking-wider uppercase text-slate-400">
+                          {sale.saleMode === 'export' && <><Plane size={11} className="text-blue-500" /> <span className="text-blue-600/80">Export</span></>}
+                          {sale.saleMode === 'locale' && <><MapPin size={11} className="text-emerald-500" /> <span className="text-emerald-600/80">Locale</span></>}
+                          {sale.saleMode === 'marchand' && <><Store size={11} className="text-purple-500" /> <span className="text-purple-600/80">Marchand</span></>}
+                        </div>
+                      )}
                     </td>
                     <td className="px-5 py-4 align-top w-64">
                       <div className="font-black text-slate-800 text-base flex items-center relative group">

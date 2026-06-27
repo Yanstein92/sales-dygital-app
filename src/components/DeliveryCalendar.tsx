@@ -147,6 +147,20 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
     await saveConfig(updatedConfig);
   };
 
+  useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.split('?')[1]);
+    const planSaleId = hashParams.get('planSaleId');
+    if (planSaleId && sales && sales.length > 0 && config.slots.length > 0) {
+      const sale = sales.find(s => s.id === planSaleId);
+      if (sale && sale.factureStatus === 'facture') {
+        setIsPlanningSale(sale);
+        setPlanningSlot(sale.deliverySlot || config.slots[0] || '');
+        // Clear param to avoid looping
+        window.history.replaceState(null, '', '#delivery_calendar');
+      }
+    }
+  }, [sales, config.slots]);
+
   // Handle Delivery Scheduling internally
   const handleScheduleDelivery = async (sale: Sale, date: string, slot: string) => {
     if (!databaseUid) return;
@@ -749,34 +763,43 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 min-h-screen">
       {/* Top Banner with Navigation Tabs */}
-      <div className="bg-slate-900 text-white p-6 shadow-md border-b border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-black flex items-center gap-2.5">
-            <CalendarIcon className="text-blue-400" size={26} /> Calendrier des Sorties
-          </h2>
-          <p className="text-sm text-slate-400 mt-1">Gérez la préparation des véhicules facturés, programmez les rendez-vous et générez les décharges.</p>
-        </div>
-        
-        {/* Tab Controls */}
-        <div className="flex bg-slate-800 p-1.5 rounded-xl border border-slate-700/80">
-          <button 
-            onClick={() => setActiveTab('calendar')}
-            className={`px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'calendar' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
-          >
-            <CalendarIcon size={14} /> Calendrier
-          </button>
-          <button 
-            onClick={() => setActiveTab('config')}
-            className={`px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'config' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
-          >
-            <Settings size={14} /> Configuration
-          </button>
-          <button 
-            onClick={() => setActiveTab('logs')}
-            className={`px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'logs' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
-          >
-            <History size={14} /> Historique global
-          </button>
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 p-6 text-white shadow-md border-b border-indigo-900 relative overflow-hidden">
+        <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-10 bg-[radial-gradient(circle_at_top_right,var(--color-indigo-400),transparent_50%)] pointer-events-none" />
+        <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-indigo-400 text-xs font-black uppercase tracking-widest mb-1.5">
+              <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+              Logistique & Livraisons
+            </div>
+            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white flex items-center gap-2">
+              <CalendarIcon className="text-indigo-400" size={28} /> Agenda des Livraisons
+            </h1>
+            <p className="text-slate-300 text-xs md:text-sm mt-1.5 font-medium max-w-xl leading-relaxed">
+              Gérez la préparation des véhicules facturés, programmez les rendez-vous et générez les décharges.
+            </p>
+          </div>
+          
+          {/* Tab Controls */}
+          <div className="flex bg-white/10 backdrop-blur-md p-1.5 rounded-xl border border-white/10 shrink-0">
+            <button 
+              onClick={() => setActiveTab('calendar')}
+              className={`px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'calendar' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white'}`}
+            >
+              <CalendarIcon size={14} /> Calendrier
+            </button>
+            <button 
+              onClick={() => setActiveTab('config')}
+              className={`px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'config' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white'}`}
+            >
+              <Settings size={14} /> Configuration
+            </button>
+            <button 
+              onClick={() => setActiveTab('logs')}
+              className={`px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'logs' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white'}`}
+            >
+              <History size={14} /> Historique global
+            </button>
+          </div>
         </div>
       </div>
 
