@@ -81,6 +81,7 @@ export const Dashboard: React.FC<{
   const calculateRemaining = (saleId: string) => {
     const sale = sales.find(s => s.id === saleId);
     if (!sale) return 0;
+    if (sale.factureStatus === 'rembourse') return 0;
     const price = Number(sale.price) || 0;
     const transport = Number(sale.transport) || 0;
     return (price + transport) - calculateTotalPaid(saleId);

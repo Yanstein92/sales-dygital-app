@@ -3,7 +3,7 @@ import {
   TrendingUp, Users, Banknote, Calendar, Car, BarChart3, 
   ArrowUpRight, AlertCircle, CheckCircle2, PieChart, Info,
   Filter, RotateCcw, ChevronRight, Coins, ShieldAlert, Briefcase,
-  Clock
+  Clock, Undo2
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useApp } from '../lib/context';
@@ -106,6 +106,7 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
     let totalRefunded = 0;
     let totalTransport = 0;
     let totalDiscount = 0;
+    let remainingToCollect = 0;
 
     filteredSales.forEach(s => {
       const price = Number(s.price) || 0;
@@ -116,8 +117,15 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
       totalDiscount += discount;
 
       // Handle refunds
-      if (s.factureStatus === 'rembourse' && s.refundAmount) {
-        totalRefunded += Number(s.refundAmount) || 0;
+      if (s.factureStatus === 'rembourse') {
+        if (s.refundAmount) {
+          totalRefunded += Number(s.refundAmount) || 0;
+        }
+      } else {
+        // Calculate remaining to pay for active sales only
+        const salePayments = payments.filter(p => p.saleId === s.id);
+        const salePaid = salePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+        remainingToCollect += Math.max(0, price + transport - salePaid);
       }
     });
 
@@ -126,13 +134,14 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
     });
 
     const netCA = totalCA - totalRefunded;
-    const remainingToCollect = Math.max(0, netCA - totalPaid);
+    const netPaid = totalPaid - totalRefunded;
     const averageBasket = filteredSales.length > 0 ? (totalCA / filteredSales.length) : 0;
 
     return {
       totalCA,
       netCA,
       totalPaid,
+      netPaid,
       totalRefunded,
       remainingToCollect,
       averageBasket,
@@ -140,7 +149,7 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
       totalDiscount,
       count: filteredSales.length
     };
-  }, [filteredSales, filteredPayments]);
+  }, [filteredSales, filteredPayments, payments]);
 
   // Analytics: Sales & Revenue by Commercial
   const commercialPerformance = useMemo(() => {
@@ -167,7 +176,8 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
       const price = Number(s.price) || 0;
       const transport = Number(s.transport) || 0;
       const discount = Number(s.discountAmount) || 0;
-      const totalSaleVal = price + transport;
+      const refund = (s.factureStatus === 'rembourse' && s.refundAmount) ? Number(s.refundAmount) : 0;
+      const totalSaleVal = price + transport - refund;
       
       data[comm].salesCount += 1;
       data[comm].volume += totalSaleVal;
@@ -175,9 +185,12 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
       
       // Calculate payment for this specific sale
       const salePayments = payments.filter(p => p.saleId === s.id);
-      const salePaid = salePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+      const salePaid = salePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) - refund;
       data[comm].paid += salePaid;
-      data[comm].remaining += Math.max(0, totalSaleVal - salePaid);
+      
+      const isRembourse = s.factureStatus === 'rembourse';
+      const saleRemaining = isRembourse ? 0 : Math.max(0, totalSaleVal - salePaid);
+      data[comm].remaining += saleRemaining;
     });
 
     return Object.values(data).sort((a, b) => b.volume - a.volume);
@@ -329,7 +342,7 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
       </div>
 
       {/* KPI Cards Bento Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Total CA Card */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between group hover:border-slate-300 transition-all">
           <div className="flex items-center justify-between mb-3">
@@ -337,9 +350,10 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
             <div className="bg-indigo-50 p-2 rounded-lg text-indigo-600"><TrendingUp size={20} /></div>
           </div>
           <div>
-            <h3 className="text-2xl font-black text-slate-900">{(stats.totalCA).toLocaleString('fr-FR')} €</h3>
-            <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-2">
-              <span className="font-extrabold text-slate-700">{stats.count}</span> dossier(s) finalisé(s).
+            <h3 className="text-xl font-black text-slate-900">{(stats.netCA).toLocaleString('fr-FR')} €</h3>
+            <div className="flex flex-col gap-0.5 mt-2 text-[10px] text-slate-500">
+              <div><span className="font-extrabold text-slate-700">{stats.count}</span> dossier(s).</div>
+              {stats.totalRefunded > 0 && <div>Brut: {stats.totalCA.toLocaleString('fr-FR')} €</div>}
             </div>
           </div>
           <div className="absolute right-0 bottom-0 w-24 h-24 text-indigo-50/40 pointer-events-none translate-x-4 translate-y-4">
@@ -354,12 +368,15 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
             <div className="bg-emerald-50 p-2 rounded-lg text-emerald-600"><CheckCircle2 size={20} /></div>
           </div>
           <div>
-            <h3 className="text-2xl font-black text-emerald-600">{(stats.totalPaid).toLocaleString('fr-FR')} €</h3>
-            <div className="flex items-center gap-1 text-[10px] mt-2">
-              <span className="text-emerald-700 font-extrabold">
-                {stats.totalCA > 0 ? Math.round((stats.totalPaid / stats.totalCA) * 100) : 0}%
-              </span>
-              <span className="text-slate-500">recouvré avec succès.</span>
+            <h3 className="text-xl font-black text-emerald-600">{(stats.netPaid).toLocaleString('fr-FR')} €</h3>
+            <div className="flex flex-col gap-0.5 mt-2 text-[10px]">
+              <div className="text-slate-500">
+                <span className="text-emerald-700 font-extrabold">
+                  {stats.netCA > 0 ? Math.round((stats.netPaid / stats.netCA) * 100) : 0}%
+                </span>{' '}
+                recouvré.
+              </div>
+              {stats.totalRefunded > 0 && <div className="text-slate-400">Brut: {stats.totalPaid.toLocaleString('fr-FR')} €</div>}
             </div>
           </div>
           <div className="absolute right-0 bottom-0 w-24 h-24 text-emerald-50/40 pointer-events-none translate-x-4 translate-y-4">
@@ -374,16 +391,33 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
             <div className="bg-amber-100 p-2 rounded-lg text-amber-700"><Coins size={20} /></div>
           </div>
           <div>
-            <h3 className="text-2xl font-black text-amber-700">{(stats.remainingToCollect).toLocaleString('fr-FR')} €</h3>
+            <h3 className="text-xl font-black text-amber-700">{(stats.remainingToCollect).toLocaleString('fr-FR')} €</h3>
             <div className="flex items-center gap-1 text-[10px] text-amber-800 mt-2">
               <span className="font-extrabold">
-                {stats.totalCA > 0 ? Math.round((stats.remainingToCollect / stats.totalCA) * 100) : 0}%
+                {stats.netCA > 0 ? Math.round((stats.remainingToCollect / stats.netCA) * 100) : 0}%
               </span>
-              <span>du chiffre d'affaires total à percevoir.</span>
+              <span>à percevoir.</span>
             </div>
           </div>
           <div className="absolute right-0 bottom-0 w-24 h-24 text-amber-100/30 pointer-events-none translate-x-4 translate-y-4">
             <Coins className="w-full h-full" />
+          </div>
+        </div>
+
+        {/* Refunds Card */}
+        <div className="bg-white border border-rose-200 bg-rose-50/10 rounded-xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between group hover:border-rose-300 transition-all">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-bold text-rose-800 uppercase tracking-wider">Remboursements</span>
+            <div className="bg-rose-100 p-2 rounded-lg text-rose-700"><Undo2 size={20} /></div>
+          </div>
+          <div>
+            <h3 className="text-xl font-black text-rose-700">{(stats.totalRefunded).toLocaleString('fr-FR')} €</h3>
+            <div className="flex items-center gap-1 text-[10px] text-rose-500 mt-2">
+              <span>Montants restitués.</span>
+            </div>
+          </div>
+          <div className="absolute right-0 bottom-0 w-24 h-24 text-rose-100/30 pointer-events-none translate-x-4 translate-y-4">
+            <Undo2 className="w-full h-full" />
           </div>
         </div>
 
@@ -394,7 +428,7 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
             <div className="bg-slate-100 p-2 rounded-lg text-slate-600"><Briefcase size={20} /></div>
           </div>
           <div>
-            <h3 className="text-2xl font-black text-slate-800">{(Math.round(stats.averageBasket)).toLocaleString('fr-FR')} €</h3>
+            <h3 className="text-xl font-black text-slate-800">{(Math.round(stats.averageBasket)).toLocaleString('fr-FR')} €</h3>
             <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-2">
               <span className="text-indigo-600 font-extrabold">Transport inclus: </span> {stats.totalTransport.toLocaleString('fr-FR')} €
             </div>
@@ -814,7 +848,7 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
               const unpaidItems = filteredSales.map(s => {
                 const salePayments = payments.filter(p => p.saleId === s.id);
                 const paidAmount = salePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-                const remaining = Math.max(0, (Number(s.price) || 0) + (Number(s.transport) || 0) - paidAmount);
+                const remaining = s.factureStatus === 'rembourse' ? 0 : Math.max(0, (Number(s.price) || 0) + (Number(s.transport) || 0) - paidAmount);
                 
                 let diffDays = 0;
                 if (s.date) {
@@ -874,6 +908,98 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
         </div>
 
       </div>
+
+      {/* Refund Tracker Section */}
+      <div className="mt-6 bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+        <div className="pb-3 border-b border-slate-100 mb-4">
+          <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
+            <Undo2 size={18} className="text-rose-600" />
+            Suivi des Véhicules Remboursés
+          </h2>
+          <p className="text-slate-500 text-xs mt-0.5">
+            Historique complet des véhicules remboursés aux clients pour la période et le commercial sélectionnés.
+          </p>
+        </div>
+
+        {(() => {
+          const refundedSales = filteredSales.filter(s => s.factureStatus === 'rembourse');
+
+          if (refundedSales.length === 0) {
+            return (
+              <div className="py-12 text-center text-slate-400 font-bold flex flex-col items-center justify-center gap-2">
+                <Undo2 size={32} className="text-slate-300 animate-pulse" />
+                <span>Aucun remboursement enregistré pour cette sélection.</span>
+              </div>
+            );
+          }
+
+          return (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-600 border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                    <th className="py-3 px-4">N° BDC</th>
+                    <th className="py-3 px-4">Client / Bénéficiaire</th>
+                    <th className="py-3 px-4">Véhicule</th>
+                    <th className="py-3 px-4">Commercial</th>
+                    <th className="py-3 px-4">Date & Mode</th>
+                    <th className="py-3 px-4">Motif / Commentaire</th>
+                    <th className="py-3 px-4 text-right">Montant</th>
+                    <th className="py-3 px-4"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {refundedSales.map(s => (
+                    <tr 
+                      key={s.id}
+                      onClick={() => window.location.hash = `detail/${s.id}`}
+                      className="hover:bg-slate-50/80 transition-all cursor-pointer group/row"
+                    >
+                      <td className="py-4 px-4 font-mono font-bold text-slate-700">#{s.bdcNumber}</td>
+                      <td className="py-4 px-4">
+                        <div className="font-extrabold text-slate-900">{s.clientName || 'Inconnu'}</div>
+                        <div className="text-[10px] text-slate-400">{s.clientPhone || s.clientEmail || ''}</div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="font-bold text-slate-800">{s.marque} {s.modele}</div>
+                        <div className="text-[10px] font-mono text-slate-500">{s.immatriculation || s.chassis || ''}</div>
+                      </td>
+                      <td className="py-4 px-4 font-bold text-slate-600">{s.commercial}</td>
+                      <td className="py-4 px-4">
+                        <div className="font-bold text-slate-800">
+                          {s.refundDate ? new Date(s.refundDate).toLocaleDateString('fr-FR') : '-'}
+                        </div>
+                        <div className="text-[10px] font-black uppercase text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 inline-block mt-0.5">
+                          {s.refundMethod || 'Virement'}
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 max-w-xs">
+                        <p className="text-xs text-slate-500 italic truncate" title={s.refundDetails}>
+                          {s.refundDetails || 'Aucun motif renseigné'}
+                        </p>
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        <div className="font-black text-rose-600">
+                          -{(Number(s.refundAmount) || 0).toLocaleString('fr-FR')} €
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          sur {(Number(s.price) || 0).toLocaleString('fr-FR')} €
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        <div className="p-1.5 text-slate-400 group-hover/row:text-indigo-600 group-hover/row:bg-slate-100 rounded-lg transition-all inline-block">
+                          <ChevronRight size={16} />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
+      </div>
+
     </div>
   );
 };

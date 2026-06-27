@@ -7,6 +7,7 @@ import {
 import { useApp } from '../lib/context';
 import { Payment, Sale } from '../types';
 import { deleteDoc, doc, setDoc, db, getUserPath } from '../lib/firebase';
+import { generateRefundPDF } from '../utils/pdfGenerator';
 
 interface Props {
   saleId: string;
@@ -22,14 +23,14 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
   const [apptForm, setApptForm] = useState({ date: '', time: '10:00' });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showRefundForm, setShowRefundForm] = useState(false);
-  const [refundData, setRefundData] = useState({ amount: '', date: new Date().toISOString().split('T')[0], method: 'VIR', details: '' });
+  const [refundData, setRefundData] = useState({ amount: '', date: new Date().toISOString().split('T')[0], method: 'Virement', details: '' });
 
   const sale = sales.find(s => s.id === saleId);
   if (!sale || !userAuth) return null;
 
   const salePayments = payments.filter(p => p.saleId === saleId);
   const totalPaid = salePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-  const remaining = (Number(sale.price) + Number(sale.transport || 0)) - totalPaid;
+  const remaining = sale.factureStatus === 'rembourse' ? 0 : Math.max(0, (Number(sale.price) + Number(sale.transport || 0)) - totalPaid);
   const isPaid = remaining <= 0;
 
   const handleUpdateField = async (fieldsToUpdate: Partial<Sale>) => {
@@ -277,7 +278,17 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
           </select>
 
           {sale.factureStatus === 'a_rembourser' && (
-            <button onClick={() => setShowRefundForm(true)} className="flex items-center justify-center gap-2 text-white bg-amber-500 hover:bg-amber-600 px-3 py-2 rounded-md transition-colors font-bold text-sm shadow-sm">
+            <button 
+              onClick={() => {
+                setRefundData(prev => ({
+                  ...prev,
+                  amount: totalPaid.toString(),
+                  method: 'Virement'
+                }));
+                setShowRefundForm(true);
+              }} 
+              className="flex items-center justify-center gap-2 text-white bg-amber-500 hover:bg-amber-600 px-3 py-2 rounded-md transition-colors font-bold text-sm shadow-sm"
+            >
               Rembourser le client
             </button>
           )}
@@ -325,10 +336,122 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
         </div>
       )}
 
+      {showRefundForm && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <form onSubmit={handleApplyRefund} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-fade-in-up border-2 border-amber-100">
+            <h3 className="text-xl font-black text-slate-800 mb-4 pb-4 border-b border-slate-100 flex items-center gap-2">
+              <CreditCard className="text-amber-500" />
+              Enregistrer un Remboursement
+            </h3>
+            
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Montant à rembourser (€) <span className="text-red-500">*</span>
+                </label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  required 
+                  value={refundData.amount} 
+                  onChange={e => setRefundData(prev => ({ ...prev, amount: e.target.value }))}
+                  placeholder="Ex: 15000" 
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-right font-bold text-slate-700 outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Par défaut : total des paiements perçus ({totalPaid.toLocaleString()} €)
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Mode de remboursement <span className="text-red-500">*</span>
+                </label>
+                <select 
+                  value={refundData.method} 
+                  onChange={e => setRefundData(prev => ({ ...prev, method: e.target.value }))}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white font-bold outline-none focus:ring-2 focus:ring-amber-500 text-slate-700"
+                  required
+                >
+                  <option value="Avoir">Avoir</option>
+                  <option value="Espèces">Espèces</option>
+                  <option value="Virement">Virement</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Date du remboursement <span className="text-red-500">*</span>
+                </label>
+                <input 
+                  type="date" 
+                  required 
+                  value={refundData.date} 
+                  onChange={e => setRefundData(prev => ({ ...prev, date: e.target.value }))}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-sm text-slate-700 outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Détails / Motif du remboursement <span className="text-red-500">*</span>
+                </label>
+                <textarea 
+                  required
+                  value={refundData.details} 
+                  onChange={e => setRefundData(prev => ({ ...prev, details: e.target.value }))}
+                  placeholder="Ex: Annulation de la commande client, etc. (Obligatoire)" 
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-sm text-slate-700 outline-none focus:ring-2 focus:ring-amber-500 h-20 resize-none bg-white"
+                />
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!refundData.details.trim()) {
+                    onShowToast("Veuillez d'abord renseigner le motif du remboursement.", "error");
+                    return;
+                  }
+                  try {
+                    await generateRefundPDF(sale, refundData, userProfile);
+                    onShowToast("Décharge de remboursement PDF générée !", "success");
+                  } catch (e) {
+                    console.error(e);
+                    onShowToast("Erreur lors de la génération de la décharge.", "error");
+                  }
+                }}
+                className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold py-3 px-4 rounded-xl border border-indigo-200 transition-colors text-sm flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+              >
+                <FileText size={16} />
+                Générer la décharge (PDF)
+              </button>
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                type="button"
+                onClick={() => setShowRefundForm(false)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition-colors text-sm"
+              >
+                Annuler
+              </button>
+              <button 
+                type="submit"
+                className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 px-4 rounded-xl shadow-md transition-colors text-sm flex items-center justify-center gap-2"
+              >
+                Confirmer
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
 
 
       {sale.factureStatus === 'rembourse' && (
-        <div className="bg-amber-100 border-l-4 border-amber-500 rounded-r-lg p-4 mb-6 shadow-sm">
+        <div className="bg-amber-100 border-l-4 border-amber-500 rounded-r-lg p-4 mb-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="bg-amber-500 rounded-full p-1.5 text-white"><CheckSquare size={18} /></div>
             <div>
@@ -338,6 +461,28 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
                 {sale.refundDetails && <span className="block italic opacity-80 mt-1">Motif : {sale.refundDetails}</span>}
               </p>
             </div>
+          </div>
+          <div className="shrink-0">
+            <button
+              onClick={async () => {
+                try {
+                  await generateRefundPDF(sale, {
+                    amount: (sale.refundAmount || 0).toString(),
+                    date: sale.refundDate || '',
+                    method: sale.refundMethod || '',
+                    details: sale.refundDetails || ''
+                  }, userProfile);
+                  onShowToast("Téléchargement de la décharge lancé !", "success");
+                } catch (e) {
+                  console.error(e);
+                  onShowToast("Erreur lors de la génération du PDF.", "error");
+                }
+              }}
+              className="bg-white hover:bg-amber-50/50 text-amber-900 border border-amber-300 font-extrabold py-2 px-3.5 rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <FileText size={14} />
+              Télécharger la décharge (PDF)
+            </button>
           </div>
         </div>
       )}
