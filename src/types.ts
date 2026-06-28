@@ -100,3 +100,79 @@ export interface AppState {
   payments: Payment[];
   isDbLoading: boolean;
 }
+
+export interface VehicleDocument {
+  name: string;
+  base64: string;
+  uploadedAt: string;
+  size?: string;
+}
+
+export interface Vehicle {
+  id: string;
+  site: string; // ex: DJ CAR, KDB AUTO
+  type: 'VN' | 'VO';
+  type2?: string; // VP, VU
+  refInterne?: string;
+  numDossier: string;
+  numVO?: string;
+  immatriculation: string;
+  vin: string;
+  marque: string;
+  modele: string;
+  version?: string;
+  mec?: string; // Date de mise en circulation
+  annee?: string;
+  energie?: string;
+  couleur?: string;
+  precisionCouleur?: string;
+  genre?: string;
+  carrosserie?: string;
+  boite?: string;
+  sellerie?: string;
+  couleurInterieure?: string;
+  segment?: string;
+  puissanceDin?: number;
+  puissanceFiscale?: number;
+  cylindree?: number;
+  nbPortes?: number;
+  nbPlaces?: number;
+  nbRapports?: number;
+  pays?: string;
+  kms: number;
+  kmGaranti: boolean;
+  premiereMain: boolean;
+
+  // Prix de vente
+  prixAchat?: number;
+  prixParticulierHT?: number;
+  prixParticulierTTC?: number;
+  prixProfessionnelHT?: number;
+  prixProfessionnelTTC?: number;
+  prixPromoHT?: number;
+  prixPromoTTC?: number;
+  prixSpecialHT?: number;
+  prixSpecialTTC?: number;
+  fraisEstimesHT?: number;
+  fraisEstimesTTC?: number;
+  tvaRecuperable: boolean;
+
+  // Garantie
+  typeGarantie?: string;
+  kmCompris?: number;
+  dateDebut?: string;
+  dateFin?: string;
+  dureeMois?: number;
+
+  // Specifics
+  doubleCles: boolean;
+  defauts?: string;
+  defautPoints?: { x: number; y: number; comment: string }[];
+  documents?: VehicleDocument[];
+
+  // Status
+  status: 'PARC' | 'ARRIVAGE' | 'EN_COURS' | 'EN_REPARATION' | 'VENDU';
+
+  createdAt?: string;
+  updatedAt?: string;
+}

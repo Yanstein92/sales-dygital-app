@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2, CheckCircle2, LogOut, Users, Edit2, Check, KeyRound, LayoutDashboard, Car, ShieldCheck, Activity, Menu, X, Trash2, TrendingUp, Calendar as CalendarIcon, Clock, Search, Bell, ChevronDown, Globe } from 'lucide-react';
 import { AppProvider, useApp } from './lib/context';
-import { auth, signOut, db, doc, setDoc, getUserDocPath } from './lib/firebase';
+import { auth, signOut, db, doc, setDoc, getUserDocPath, getUserPath, collection, onSnapshot } from './lib/firebase';
 import { CustomLogo } from './components/CustomLogo';
 import { Login } from './components/Login';
 import { Dashboard } from './components/Dashboard';
@@ -15,6 +15,7 @@ import { DeliveryCalendar } from './components/DeliveryCalendar';
 import { ClientBooking } from './components/ClientBooking';
 import { MyAccount } from './components/MyAccount';
 import { NotificationsView, Notification } from './components/NotificationsView';
+import { StockView } from './components/StockView';
 import { Sale } from './types';
 // PDF parsing logic pulled into helper to keep App clean
 const processPDFFile = async (
@@ -212,44 +213,50 @@ const MainAppContent: React.FC = () => {
   const [currentLanguage, setCurrentLanguage] = useState({ code: 'fr', name: 'French', flag: '🇫🇷' });
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>([
-    {
-      id: 'notif-1',
-      title: 'Nouveau BDC importé',
-      description: 'Yanis Khelifi vient de scanner un PDF pour un nouveau client.',
-      time: 'Il y a 5 min',
-      type: 'bdc',
-      targetHash: 'dashboard',
-      read: false
-    },
-    {
-      id: 'notif-2',
-      title: 'Sortie de véhicule confirmée',
-      description: 'Le véhicule immatriculé AA-123-BB est marqué comme sorti.',
-      time: 'Il y a 2h',
-      type: 'release',
-      targetHash: 'delivery_calendar',
-      read: false
-    },
-    {
-      id: 'notif-3',
-      title: 'Remboursement de décharge',
-      description: 'Une décharge de remboursement a été émise avec succès.',
-      time: 'Il y a 1 jour',
-      type: 'refund',
-      targetHash: 'dashboard',
-      read: false
-    },
-    {
-      id: 'notif-4',
-      title: 'Bienvenue sur Sales Dygital',
-      description: 'Votre espace de vente sécurisé est prêt et configuré.',
-      time: 'Il y a 2 jours',
-      type: 'system',
-      targetHash: 'dashboard',
-      read: true
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  useEffect(() => {
+    if (!userAuth?.uid) {
+      setNotifications([]);
+      return;
     }
-  ]);
+    const pathNotifs = getUserPath('notifications', userAuth.uid);
+    const unsubNotifs = onSnapshot(collection(db, pathNotifs), (snapshot) => {
+      const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Notification));
+      // Sort: newest first
+      list.sort((a, b) => {
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return timeB - timeA;
+      });
+      setNotifications(list);
+    }, (error) => {
+      console.error("Error loading notifications:", error);
+    });
+
+    return () => unsubNotifs();
+  }, [userAuth]);
+
+  const handleMarkAsRead = async (id: string) => {
+    if (!userAuth?.uid) return;
+    try {
+      await setDoc(doc(db, getUserPath('notifications', userAuth.uid), id), { read: true }, { merge: true });
+    } catch (e) {
+      console.error("Failed to mark notification as read:", e);
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    if (!userAuth?.uid) return;
+    try {
+      const promises = notifications.filter(n => !n.read).map(n => 
+        setDoc(doc(db, getUserPath('notifications', userAuth.uid), n.id), { read: true }, { merge: true })
+      );
+      await Promise.all(promises);
+    } catch (e) {
+      console.error("Failed to mark all notifications as read:", e);
+    }
+  };
 
   const currentCompanyDetails = userProfile?.companiesDetails?.find(
     c => c.name.toUpperCase() === userProfile?.companyId?.toUpperCase()
@@ -298,6 +305,8 @@ const MainAppContent: React.FC = () => {
         setCurrentView('my_account');
       } else if (hash === '#notifications') {
         setCurrentView('notifications');
+      } else if (hash === '#stock') {
+        setCurrentView('stock');
       } else {
         setSelectedSaleId(null);
         setCurrentView('dashboard');
@@ -565,6 +574,16 @@ const MainAppContent: React.FC = () => {
               <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Calendrier des sorties</div>
             </button>
 
+            <button 
+              onClick={() => { window.location.hash = 'stock'; }}
+              className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${currentView === 'stock' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
+              title="Stock Véhicules"
+            >
+              <Car size={20} />
+              <span className="text-[9px] font-bold tracking-tight block md:hidden lg:block">Stock</span>
+              <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Stock Véhicules</div>
+            </button>
+
             {userProfile?.role === 'admin' && (
               <button 
                 onClick={() => { window.location.hash = 'perf_dashboard'; }}
@@ -579,16 +598,7 @@ const MainAppContent: React.FC = () => {
           </nav>
         </div>
 
-        <div className="flex flex-col items-center gap-4 w-full px-2 mt-auto">
-          <button 
-            onClick={handleLogout} 
-            className="p-3 rounded-xl text-slate-500 hover:text-red-400 hover:bg-red-950/20 w-full flex flex-col items-center justify-center gap-1 transition-all group relative cursor-pointer"
-            title="Déconnexion"
-          >
-            <LogOut size={20} />
-            <div className="absolute left-full ml-2 px-2 py-1 bg-red-950 border border-red-900 text-red-200 text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Déconnexion</div>
-          </button>
-        </div>
+        {/* Bottom part of sidebar is now empty as logout is handled via the profile menu */}
       </aside>
 
       {/* MAIN CONTAINER next to Sidebar */}
@@ -712,7 +722,7 @@ const MainAppContent: React.FC = () => {
                           key={notif.id}
                           onClick={() => {
                             // Mark as read
-                            setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, read: true } : n));
+                            handleMarkAsRead(notif.id);
                             setShowNotificationsDropdown(false);
                             if (notif.targetHash) {
                               window.location.hash = notif.targetHash;
@@ -1010,14 +1020,44 @@ const MainAppContent: React.FC = () => {
               {currentView === 'company_management' && (
                 <CompanyManagement onClose={() => window.location.hash = 'dashboard'} onShowToast={showToast} />
               )}
+              {currentView === 'stock' && (
+                <StockView 
+                  onShowToast={showToast}
+                  onCreateBdc={(vehicle) => {
+                    setDraftExtraction({
+                      isManual: true,
+                      bdcNumber: vehicle.numDossier || '',
+                      company: vehicle.site || userProfile?.companyId || 'KDB AUTO',
+                      clientName: '',
+                      phone: '',
+                      email: '',
+                      marque: vehicle.marque || '',
+                      modele: vehicle.modele || '',
+                      color: vehicle.couleur || '',
+                      vin: vehicle.vin || '',
+                      plaque: vehicle.immatriculation || '',
+                      mec: vehicle.mec || '',
+                      price: vehicle.prixParticulierTTC?.toString() || '',
+                      date: new Date().toISOString().split('T')[0],
+                      commercial: userProfile?.name || 'À assigner',
+                      ref: vehicle.refInterne || '',
+                      address: '',
+                      zipCode: '',
+                      city: '',
+                      draftPayments: []
+                    });
+                    window.location.hash = 'pdf_validation';
+                  }}
+                />
+              )}
               {currentView === 'my_account' && (
                 <MyAccount onBack={() => window.location.hash = 'dashboard'} onShowToast={showToast} />
               )}
               {currentView === 'notifications' && (
                 <NotificationsView 
                   notifications={notifications}
-                  onMarkAsRead={(id) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))}
-                  onMarkAllAsRead={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
+                  onMarkAsRead={handleMarkAsRead}
+                  onMarkAllAsRead={handleMarkAllAsRead}
                   onBack={() => window.location.hash = 'dashboard'}
                   onNavigate={(hash) => window.location.hash = hash}
                 />

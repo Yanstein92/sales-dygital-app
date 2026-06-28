@@ -8,6 +8,7 @@ import { useApp } from '../lib/context';
 import { Payment, Sale } from '../types';
 import { deleteDoc, doc, setDoc, db, getUserPath } from '../lib/firebase';
 import { generateRefundPDF } from '../utils/pdfGenerator';
+import { notifyFolderAction } from '../lib/notifications';
 
 interface Props {
   saleId: string;
@@ -17,7 +18,7 @@ interface Props {
 }
 
 export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShowToast }) => {
-  const { sales, payments, userAuth, userProfile, databaseUid } = useApp();
+  const { sales, payments, userAuth, userProfile, databaseUid, teamMembers } = useApp();
   const [noteInput, setNoteInput] = useState('');
   const [showApptPopup, setShowApptPopup] = useState(false);
   const [apptForm, setApptForm] = useState({ date: '', time: '10:00' });
@@ -37,6 +38,21 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
     try {
       await setDoc(doc(db, getUserPath('sales', databaseUid), sale.id), fieldsToUpdate, { merge: true });
       onShowToast("Dossier mis à jour.", "success");
+
+      // Check what is being updated to avoid duplicate notifications
+      const isReleaseUpdate = 'releaseStatus' in fieldsToUpdate || 'deliveryStatus' in fieldsToUpdate;
+      const isRefundUpdate = 'factureStatus' in fieldsToUpdate && (fieldsToUpdate.factureStatus === 'rembourse' || fieldsToUpdate.factureStatus === 'a_rembourser');
+
+      if (!isReleaseUpdate && !isRefundUpdate) {
+        notifyFolderAction(
+          sale,
+          'modification',
+          `Mise à jour dossier (${sale.clientName})`,
+          `Les informations du dossier de ${sale.clientName} ont été modifiées par ${userProfile?.name || 'un utilisateur'}.`,
+          teamMembers,
+          databaseUid
+        );
+      }
     } catch (err) {
       onShowToast("Erreur lors de la mise à jour.", "error");
     }
@@ -63,6 +79,15 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
             deliveryLog: [...existingLog, logEntry]
           }, { merge: true });
           onShowToast("Véhicule remis en parc et livraison annulée.", "success");
+
+          notifyFolderAction(
+            sale,
+            'release',
+            `Livraison annulée (${sale.clientName})`,
+            `Le véhicule de ${sale.clientName} a été remis en parc (livraison annulée) par ${userProfile?.name || 'un utilisateur'}.`,
+            teamMembers,
+            databaseUid
+          );
         } catch (err) {
           onShowToast("Erreur lors de la remise en parc.", "error");
         }
@@ -84,6 +109,15 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
           deliveryLog: [...existingLog, logEntry]
         }, { merge: true });
         onShowToast("Véhicule marqué comme sorti.", "success");
+
+        notifyFolderAction(
+          sale,
+          'release',
+          `Véhicule sorti du parc (${sale.clientName})`,
+          `Le véhicule immatriculé ${sale.plaque || ''} pour ${sale.clientName} est marqué comme SORTI par ${userProfile?.name || 'un utilisateur'}.`,
+          teamMembers,
+          databaseUid
+        );
       } catch (err) {
         onShowToast("Erreur lors de la mise à jour.", "error");
       }
@@ -91,6 +125,15 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
     }
 
     await handleUpdateField({ releaseStatus: newStatus });
+
+    notifyFolderAction(
+      sale,
+      'release',
+      `Statut de sortie modifié (${sale.clientName})`,
+      `Le statut de sortie a été mis à jour à "${newStatus}" par ${userProfile?.name || 'un utilisateur'}.`,
+      teamMembers,
+      databaseUid
+    );
   };
 
   const handleApplyRefund = async (e: React.FormEvent) => {
@@ -105,6 +148,15 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
       });
       setShowRefundForm(false);
       onShowToast("Véhicule remboursé avec succès", "success");
+
+      notifyFolderAction(
+        sale,
+        'refund',
+        `Remboursement effectué (${sale.clientName})`,
+        `Un remboursement de ${refundData.amount}€ a été enregistré pour ${sale.clientName} par ${userProfile?.name || 'un utilisateur'}.`,
+        teamMembers,
+        databaseUid
+      );
     } catch (err) {
       onShowToast("Erreur lors du remboursement.", "error");
     }
@@ -114,25 +166,45 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
     await handleUpdateField({ factureStatus: 'a_rembourser' });
     setShowDeleteModal(false);
     onShowToast("Statut 'À rembourser' appliqué", "success");
+
+    notifyFolderAction(
+      sale,
+      'refund',
+      `Dossier marqué À Rembourser (${sale.clientName})`,
+      `Le dossier de ${sale.clientName} a été configuré au statut "À rembourser" par ${userProfile?.name || 'un utilisateur'}.`,
+      teamMembers,
+      databaseUid
+    );
   };
 
   const handleAddPayment = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const payId = Date.now().toString();
+    const amount = parseFloat(fd.get('amount') as string);
+    const typeStr = fd.get('type') as string;
     try {
       await setDoc(doc(db, getUserPath('payments', databaseUid), payId), { 
         id: payId, 
         saleId: saleId, 
-        type: fd.get('type'), 
+        type: typeStr, 
         payer: fd.get('payer'), 
         date: fd.get('date'), 
         encaissementDate: fd.get('encaissementDate'),
-        amount: parseFloat(fd.get('amount') as string),
+        amount: amount,
         addedBy: userProfile?.name || userProfile?.email || userAuth?.email || 'Inconnu'
       });
       onShowToast("Paiement encaissé !");
       e.currentTarget.reset();
+
+      notifyFolderAction(
+        sale,
+        'payment',
+        `Nouveau paiement enregistré (${sale.clientName})`,
+        `Un versement de ${amount}€ par ${typeStr} a été enregistré pour ${sale.clientName} par ${userProfile?.name || 'un utilisateur'}.`,
+        teamMembers,
+        databaseUid
+      );
     } catch (error) { 
       onShowToast("Erreur de connexion.", "error"); 
     }

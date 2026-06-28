@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { auth, db, getUserPath, getUserDocPath, onAuthStateChanged, collection, onSnapshot, signInWithCustomToken, doc, getDoc, setDoc, query, where, limit, getDocs, or, OperationType, handleFirestoreError } from './firebase';
-import { Sale, Payment, UserProfile } from '../types';
+import { Sale, Payment, UserProfile, Vehicle } from '../types';
 
 interface AppContextType {
   userAuth: User | null;
@@ -9,6 +9,7 @@ interface AppContextType {
   setUserProfile: React.Dispatch<React.SetStateAction<UserProfile | null>>;
   sales: Sale[];
   payments: Payment[];
+  vehicles: Vehicle[];
   isDbLoading: boolean;
   setAuthError: (err: string | null) => void;
   authError: string | null;
@@ -24,6 +25,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [sales, setSales] = useState<Sale[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [teamMembers, setTeamMembers] = useState<UserProfile[]>([]);
   const [isDbLoading, setIsDbLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -139,6 +141,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Fetch standard data:
         const pathSales = getUserPath('sales', finalDatabaseUid);
         const pathPayments = getUserPath('payments', finalDatabaseUid);
+        const pathVehicles = getUserPath('vehicles', finalDatabaseUid);
 
         // Fetch team members globally using server API
         fetchTeamData(profile, finalDatabaseUid, userAuth.uid);
@@ -158,7 +161,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           handleFirestoreError(error, OperationType.LIST, pathPayments);
         });
 
-        return () => { unsubSales(); unsubPayments(); };
+        const unsubVehicles = onSnapshot(collection(db, pathVehicles), (snapshot) => {
+          setVehicles(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Vehicle)));
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, pathVehicles);
+        });
+
+        return () => { unsubSales(); unsubPayments(); unsubVehicles(); };
       } catch (err) {
         setAuthError("Erreur de profil initial.");
         setIsDbLoading(false);
@@ -172,7 +181,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [userAuth]);
 
   return (
-    <AppContext.Provider value={{ userAuth, userProfile, setUserProfile, sales, payments, isDbLoading, authError, setAuthError, databaseUid, teamMembers, refreshTeam }}>
+    <AppContext.Provider value={{ userAuth, userProfile, setUserProfile, sales, payments, vehicles, isDbLoading, authError, setAuthError, databaseUid, teamMembers, refreshTeam }}>
       {children}
     </AppContext.Provider>
   );

@@ -109,7 +109,7 @@ export async function generateRefundPDF(sale: Sale, refund: RefundPDFData, userP
 
   // --- HEADER SECTION ---
   if (logoImg) {
-    const maxWidth = 15;
+    const maxWidth = 25;
     const maxHeight = 15;
     let finalWidth = maxWidth;
     let finalHeight = maxHeight;
@@ -133,7 +133,7 @@ export async function generateRefundPDF(sale: Sale, refund: RefundPDFData, userP
     doc.setLineWidth(0.35);
     doc.line(44, topY, 44, topY + 15);
 
-    compDetailsStartX = 10;
+    compDetailsStartX = 48;
   }
 
   // Draw Company Details

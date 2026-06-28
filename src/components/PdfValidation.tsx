@@ -6,6 +6,7 @@ import {
 import { useApp } from '../lib/context';
 import { db, doc, setDoc, getUserPath } from '../lib/firebase';
 import { Sale } from '../types';
+import { notifyFolderAction } from '../lib/notifications';
 
 interface Props {
   draftExtraction: any;
@@ -140,11 +141,29 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
       const dataToSave = { ...data };
       
       if (existingSale) {
-        await setDoc(saleRef, { ...existingSale, ...dataToSave }, { merge: true });
+        const updatedSale = { ...existingSale, ...dataToSave } as Sale;
+        await setDoc(saleRef, updatedSale, { merge: true });
         onShowToast(`Dossier mis à jour !`, 'success');
+        notifyFolderAction(
+          updatedSale,
+          'modification',
+          `Dossier modifié (${updatedSale.clientName})`,
+          `${userProfile?.name || 'Un utilisateur'} a mis à jour les informations du dossier pour ${updatedSale.clientName} (${updatedSale.marque} ${updatedSale.modele}).`,
+          teamMembers,
+          databaseUid
+        );
       } else {
-        await setDoc(saleRef, { ...dataToSave, id: targetId, notes: [], factureStatus: 'non_facture', releaseStatus: 'non_sorti' }, { merge: true });
+        const newSale = { ...dataToSave, id: targetId, notes: [], factureStatus: 'non_facture', releaseStatus: 'non_sorti' } as Sale;
+        await setDoc(saleRef, newSale, { merge: true });
         onShowToast(`Dossier créé avec succès !`, 'success');
+        notifyFolderAction(
+          newSale,
+          'bdc',
+          `Nouveau BDC importé : ${newSale.bdcNumber || ''}`,
+          `${userProfile?.name || 'Un utilisateur'} a importé un nouveau dossier pour le client ${newSale.clientName} (${newSale.marque} ${newSale.modele}).`,
+          teamMembers,
+          databaseUid
+        );
         
         // EXCLUSIVITÉ DJ CAR : Le système d'envoi d'e-mails pour les nouveaux bons de commande est réservé uniquement à DJ CAR.
         if (data.company === 'DJ CAR') {

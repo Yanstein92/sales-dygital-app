@@ -4,6 +4,7 @@ import { db, doc, setDoc, getDoc, getUserDocPath } from '../lib/firebase';
 import { useApp } from '../lib/context';
 import { Sale } from '../types';
 import { generateDeliveryPDF } from '../utils/pdfGenerator';
+import { notifyFolderAction } from '../lib/notifications';
 
 interface DeliveryCalendarProps {
   onShowToast: (m: string, t: 'success' | 'error') => void;
@@ -20,7 +21,7 @@ interface DeliveryConfig {
 }
 
 export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast }) => {
-  const { sales, userProfile, databaseUid } = useApp();
+  const { sales, userProfile, databaseUid, teamMembers } = useApp();
   const canModifySortie = userProfile?.role === 'admin' || userProfile?.role === 'park_manager';
   
   // Navigation states
@@ -208,6 +209,15 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
       await setDoc(saleRef, updatedFields, { merge: true });
       onShowToast(`Livraison de ${sale.clientName} programmée avec succès.`, "success");
       setIsPlanningSale(null);
+
+      notifyFolderAction(
+        sale,
+        'release',
+        `Livraison planifiée (${sale.clientName})`,
+        `Une livraison a été planifiée pour le ${date} à ${slot} par ${userProfile?.name || 'un utilisateur'}.`,
+        teamMembers,
+        databaseUid
+      );
     } catch (e) {
       onShowToast("Erreur lors de la planification de la livraison.", "error");
     }
@@ -230,6 +240,15 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
         deliveryLog: [...existingLog, logEntry]
       }, { merge: true });
       onShowToast(`Véhicule marqué comme livré. Dossier clôturé !`, "success");
+
+      notifyFolderAction(
+        sale,
+        'release',
+        `Véhicule livré (${sale.clientName})`,
+        `Le véhicule a été livré et marqué comme sorti par ${userProfile?.name || 'un utilisateur'}.`,
+        teamMembers,
+        databaseUid
+      );
     } catch (e) {
       onShowToast("Erreur lors de la mise à jour.", "error");
     }
@@ -253,6 +272,15 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
         deliveryLog: [...existingLog, logEntry]
       }, { merge: true });
       onShowToast("Livraison annulée.", "success");
+
+      notifyFolderAction(
+        sale,
+        'release',
+        `Livraison annulée (${sale.clientName})`,
+        `La livraison pour ${sale.clientName} a été annulée par ${userProfile?.name || 'un utilisateur'}.`,
+        teamMembers,
+        databaseUid
+      );
     } catch (e) {
       onShowToast("Erreur lors de l'annulation.", "error");
     }
