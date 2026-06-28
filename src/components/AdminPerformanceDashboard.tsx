@@ -3,7 +3,7 @@ import {
   TrendingUp, Users, Banknote, Calendar, Car, BarChart3, 
   ArrowUpRight, AlertCircle, CheckCircle2, PieChart, Info,
   Filter, RotateCcw, ChevronRight, Coins, ShieldAlert, Briefcase,
-  Clock, Undo2
+  Clock, Undo2, Package, Truck
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useApp } from '../lib/context';
@@ -20,6 +20,7 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
   // Filter States
   const [filterMonth, setFilterMonth] = useState<string>('all'); // 'all' or 'YYYY-MM'
   const [filterCommercial, setFilterCommercial] = useState<string>('all');
+  const [filterCompany, setFilterCompany] = useState<string>('all');
   const [viewFormat, setViewFormat] = useState<'table' | 'charts'>('table');
   const [showDiscounts, setShowDiscounts] = useState<boolean>(false);
 
@@ -64,11 +65,28 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
     }
   };
 
-  // Filter Sales that belong to this Admin's company
+  // Get all unique companies from the sales list
+  const availableCompanies = useMemo(() => {
+    const list = Array.from(new Set(sales.map(s => s.company).filter(Boolean)));
+    return list.sort();
+  }, [sales]);
+
+  // Filter Sales that belong to selected company, or based on permissions if 'all'
   const companySales = useMemo(() => {
-    if (!userProfile?.companyId) return [];
-    return sales.filter(s => s.company === userProfile.companyId);
-  }, [sales, userProfile?.companyId]);
+    if (filterCompany !== 'all') {
+      return sales.filter(s => s.company === filterCompany);
+    }
+    // If 'all', and if user is superadmin/admin, let them see all sales.
+    const isAdminOrSuper = userProfile?.role === 'superadmin' || userProfile?.role === 'admin';
+    if (isAdminOrSuper) {
+      return sales;
+    } else {
+      if (userProfile?.companyId) {
+        return sales.filter(s => s.company === userProfile.companyId);
+      }
+      return sales;
+    }
+  }, [sales, filterCompany, userProfile]);
 
   // Unique months available in sales for filtering
   const availableMonths = useMemo(() => {
@@ -137,6 +155,10 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
     const netPaid = totalPaid - totalRefunded;
     const averageBasket = filteredSales.length > 0 ? (totalCA / filteredSales.length) : 0;
 
+    const totalDeliveries = filteredSales.filter(s => s.releaseStatus === 'sorti' || s.releaseStatus === 'sorti_tpd').length;
+    const scheduledDeliveries = filteredSales.filter(s => s.releaseStatus === 'programmee').length;
+    const inParc = filteredSales.filter(s => !s.releaseStatus || s.releaseStatus === 'non_sorti').length;
+
     return {
       totalCA,
       netCA,
@@ -147,7 +169,10 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
       averageBasket,
       totalTransport,
       totalDiscount,
-      count: filteredSales.length
+      count: filteredSales.length,
+      totalDeliveries,
+      scheduledDeliveries,
+      inParc
     };
   }, [filteredSales, filteredPayments, payments]);
 
@@ -245,6 +270,7 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
   const resetFilters = () => {
     setFilterMonth('all');
     setFilterCommercial('all');
+    setFilterCompany('all');
   };
 
   // Format month to human readable
@@ -274,7 +300,7 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
               Performance & Analyses
             </h1>
             <p className="text-slate-300 text-xs md:text-sm mt-1.5 font-medium max-w-xl leading-relaxed">
-              Consultez l'état financier en temps réel de <span className="text-white font-black">{userProfile?.companyId}</span>, suivez les objectifs de vos commerciaux et gérez les encaissements à recevoir.
+              Consultez l'état financier en temps réel de <span className="text-white font-black">{filterCompany === 'all' ? 'Toutes vos entreprises' : filterCompany}</span>, suivez les objectifs de vos commerciaux et gérez les encaissements à recevoir.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -294,12 +320,29 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
             <span>Filtrer par :</span>
           </div>
 
+          {/* Company Selector */}
+          <div className="relative">
+            <select
+              value={filterCompany}
+              onChange={(e) => setFilterCompany(e.target.value)}
+              className="appearance-none bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold py-2.5 pl-3 pr-8 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold"
+            >
+              <option value="all">Toutes les entreprises</option>
+              {availableCompanies.map(company => (
+                <option key={company} value={company}>{company}</option>
+              ))}
+            </select>
+            <div className="absolute inset-y-0 right-2.5 flex items-center pointer-events-none text-slate-400">
+              <Filter size={14} />
+            </div>
+          </div>
+
           {/* Period Selector */}
           <div className="relative">
             <select
               value={filterMonth}
               onChange={(e) => setFilterMonth(e.target.value)}
-              className="appearance-none bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold py-2.5 pl-3 pr-8 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+              className="appearance-none bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold py-2.5 pl-3 pr-8 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold"
             >
               <option value="all">Toutes les périodes</option>
               {availableMonths.map(month => (
@@ -316,7 +359,7 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
             <select
               value={filterCommercial}
               onChange={(e) => setFilterCommercial(e.target.value)}
-              className="appearance-none bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold py-2.5 pl-3 pr-8 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+              className="appearance-none bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold py-2.5 pl-3 pr-8 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold"
             >
               <option value="all">Tous les Commerciaux</option>
               {teamMembers.map(member => (
@@ -330,7 +373,7 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
         </div>
 
         {/* Clear Filters */}
-        {(filterMonth !== 'all' || filterCommercial !== 'all') && (
+        {(filterMonth !== 'all' || filterCommercial !== 'all' || filterCompany !== 'all') && (
           <button
             onClick={resetFilters}
             className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-bold hover:underline transition-all cursor-pointer"
@@ -342,99 +385,143 @@ export const AdminPerformanceDashboard: React.FC<AdminPerformanceDashboardProps>
       </div>
 
       {/* KPI Cards Bento Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        {/* Total CA Card */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between group hover:border-slate-300 transition-all">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Chiffre d'Affaires</span>
-            <div className="bg-indigo-50 p-2 rounded-lg text-indigo-600"><TrendingUp size={20} /></div>
-          </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* Total CA Card (Spans 2 columns) */}
+        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between group hover:border-slate-300 transition-all">
           <div>
-            <h3 className="text-xl font-black text-slate-900">{(stats.netCA).toLocaleString('fr-FR')} €</h3>
-            <div className="flex flex-col gap-0.5 mt-2 text-[10px] text-slate-500">
-              <div><span className="font-extrabold text-slate-700">{stats.count}</span> dossier(s).</div>
-              {stats.totalRefunded > 0 && <div>Brut: {stats.totalCA.toLocaleString('fr-FR')} €</div>}
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-black text-slate-400 uppercase tracking-wider">Bilan Financier</span>
+              <div className="bg-indigo-50 p-2 rounded-lg text-indigo-600"><TrendingUp size={20} /></div>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-2 border-b border-slate-100 pb-3 mb-3">
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Chiffre d'Affaires Net</span>
+                <h3 className="text-2xl font-black text-slate-900">{(stats.netCA).toLocaleString('fr-FR')} €</h3>
+              </div>
+              <div className="text-left sm:text-right">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Volume Brut</span>
+                <span className="text-sm font-bold text-slate-500">{(stats.totalCA).toLocaleString('fr-FR')} €</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              {/* Encaissé */}
+              <div className="bg-emerald-50/50 rounded-lg p-2.5 border border-emerald-100">
+                <span className="text-[9px] text-emerald-800 font-extrabold uppercase tracking-wider block">Encaissé</span>
+                <span className="text-sm font-extrabold text-emerald-700 block mt-0.5">{(stats.netPaid).toLocaleString('fr-FR')} €</span>
+                <span className="text-[9px] text-emerald-600 font-bold mt-1 inline-block bg-emerald-100 px-1.5 py-0.5 rounded">
+                  {stats.netCA > 0 ? Math.round((stats.netPaid / stats.netCA) * 100) : 0}%
+                </span>
+              </div>
+
+              {/* Reste à Recevoir */}
+              <div className="bg-amber-50/50 rounded-lg p-2.5 border border-amber-100">
+                <span className="text-[9px] text-amber-800 font-extrabold uppercase tracking-wider block">Reste à Rec.</span>
+                <span className="text-sm font-extrabold text-amber-700 block mt-0.5">{(stats.remainingToCollect).toLocaleString('fr-FR')} €</span>
+                <span className="text-[9px] text-amber-600 font-bold mt-1 inline-block bg-amber-100 px-1.5 py-0.5 rounded">
+                  {stats.netCA > 0 ? Math.round((stats.remainingToCollect / stats.netCA) * 100) : 0}%
+                </span>
+              </div>
+
+              {/* Remboursement */}
+              <div className="bg-rose-50/50 rounded-lg p-2.5 border border-rose-100">
+                <span className="text-[9px] text-rose-800 font-extrabold uppercase tracking-wider block">Remboursé</span>
+                <span className="text-sm font-extrabold text-rose-700 block mt-0.5">{(stats.totalRefunded).toLocaleString('fr-FR')} €</span>
+                <span className="text-[9px] text-rose-500 font-medium block mt-1">
+                  Montants restitués
+                </span>
+              </div>
             </div>
           </div>
-          <div className="absolute right-0 bottom-0 w-24 h-24 text-indigo-50/40 pointer-events-none translate-x-4 translate-y-4">
+          <div className="absolute right-0 bottom-0 w-24 h-24 text-indigo-50/20 pointer-events-none translate-x-4 translate-y-4">
             <TrendingUp className="w-full h-full" />
           </div>
         </div>
 
-        {/* Amount Received / Paid */}
+        {/* Performance Ventes Card (Panier moyen + Véhicules vendus) */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between group hover:border-slate-300 transition-all">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Montant Encaissé</span>
-            <div className="bg-emerald-50 p-2 rounded-lg text-emerald-600"><CheckCircle2 size={20} /></div>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Performance Ventes</span>
+            <div className="bg-indigo-50 p-2 rounded-lg text-indigo-600"><Briefcase size={20} /></div>
           </div>
-          <div>
-            <h3 className="text-xl font-black text-emerald-600">{(stats.netPaid).toLocaleString('fr-FR')} €</h3>
-            <div className="flex flex-col gap-0.5 mt-2 text-[10px]">
-              <div className="text-slate-500">
-                <span className="text-emerald-700 font-extrabold">
-                  {stats.netCA > 0 ? Math.round((stats.netPaid / stats.netCA) * 100) : 0}%
-                </span>{' '}
-                recouvré.
+          <div className="space-y-3 flex-1 flex flex-col justify-center">
+            <div>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Panier Moyen</span>
+              <h3 className="text-xl font-black text-slate-800">{(Math.round(stats.averageBasket)).toLocaleString('fr-FR')} €</h3>
+              <div className="text-[9px] text-slate-500 mt-0.5">
+                <span className="text-indigo-600 font-extrabold">Transport : </span> {stats.totalTransport.toLocaleString('fr-FR')} €
               </div>
-              {stats.totalRefunded > 0 && <div className="text-slate-400">Brut: {stats.totalPaid.toLocaleString('fr-FR')} €</div>}
+            </div>
+            <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+              <div className="bg-slate-100 p-1.5 rounded-lg text-slate-600">
+                <Car size={14} />
+              </div>
+              <div>
+                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Véhicules vendus</span>
+                <span className="text-sm font-extrabold text-slate-800">{stats.count} unités</span>
+              </div>
             </div>
           </div>
-          <div className="absolute right-0 bottom-0 w-24 h-24 text-emerald-50/40 pointer-events-none translate-x-4 translate-y-4">
-            <Banknote className="w-full h-full" />
+          <div className="absolute right-0 bottom-0 w-20 h-20 text-slate-100/30 pointer-events-none translate-x-3 translate-y-3">
+            <Car className="w-full h-full" />
           </div>
         </div>
 
-        {/* Outstanding / Remaining to Collect */}
-        <div className="bg-white border border-amber-200 bg-amber-50/10 rounded-xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between group hover:border-amber-300 transition-all">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-amber-800 uppercase tracking-wider">Reste à Recevoir</span>
-            <div className="bg-amber-100 p-2 rounded-lg text-amber-700"><Coins size={20} /></div>
-          </div>
-          <div>
-            <h3 className="text-xl font-black text-amber-700">{(stats.remainingToCollect).toLocaleString('fr-FR')} €</h3>
-            <div className="flex items-center gap-1 text-[10px] text-amber-800 mt-2">
-              <span className="font-extrabold">
-                {stats.netCA > 0 ? Math.round((stats.remainingToCollect / stats.netCA) * 100) : 0}%
-              </span>
-              <span>à percevoir.</span>
-            </div>
-          </div>
-          <div className="absolute right-0 bottom-0 w-24 h-24 text-amber-100/30 pointer-events-none translate-x-4 translate-y-4">
-            <Coins className="w-full h-full" />
-          </div>
-        </div>
-
-        {/* Refunds Card */}
-        <div className="bg-white border border-rose-200 bg-rose-50/10 rounded-xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between group hover:border-rose-300 transition-all">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-rose-800 uppercase tracking-wider">Remboursements</span>
-            <div className="bg-rose-100 p-2 rounded-lg text-rose-700"><Undo2 size={20} /></div>
-          </div>
-          <div>
-            <h3 className="text-xl font-black text-rose-700">{(stats.totalRefunded).toLocaleString('fr-FR')} €</h3>
-            <div className="flex items-center gap-1 text-[10px] text-rose-500 mt-2">
-              <span>Montants restitués.</span>
-            </div>
-          </div>
-          <div className="absolute right-0 bottom-0 w-24 h-24 text-rose-100/30 pointer-events-none translate-x-4 translate-y-4">
-            <Undo2 className="w-full h-full" />
-          </div>
-        </div>
-
-        {/* Average Basket Card */}
+        {/* Suivi des Livraisons Card */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between group hover:border-slate-300 transition-all">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Panier Moyen</span>
-            <div className="bg-slate-100 p-2 rounded-lg text-slate-600"><Briefcase size={20} /></div>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Suivi Livraisons</span>
+            <div className="bg-sky-50 p-2 rounded-lg text-sky-600"><Truck size={20} /></div>
           </div>
-          <div>
-            <h3 className="text-xl font-black text-slate-800">{(Math.round(stats.averageBasket)).toLocaleString('fr-FR')} €</h3>
-            <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-2">
-              <span className="text-indigo-600 font-extrabold">Transport inclus: </span> {stats.totalTransport.toLocaleString('fr-FR')} €
+          <div className="space-y-3 flex-1 flex flex-col justify-center">
+            <div>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Véhicules Sortis</span>
+              <h3 className="text-xl font-black text-sky-700">{stats.totalDeliveries} sortis</h3>
+              <div className="text-[9px] text-slate-500 mt-0.5">
+                Livraisons finales complétées
+              </div>
+            </div>
+            <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2">
+              <div>
+                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Programmés</span>
+                <span className="text-xs font-extrabold text-indigo-600">{stats.scheduledDeliveries} rdv</span>
+              </div>
+              <div>
+                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">En Parc</span>
+                <span className="text-xs font-extrabold text-slate-700">{stats.inParc} attente</span>
+              </div>
             </div>
           </div>
-          <div className="absolute right-0 bottom-0 w-24 h-24 text-slate-100/40 pointer-events-none translate-x-4 translate-y-4">
-            <Car className="w-full h-full" />
+          <div className="absolute right-0 bottom-0 w-20 h-20 text-sky-100/30 pointer-events-none translate-x-3 translate-y-3">
+            <Truck className="w-full h-full" />
+          </div>
+        </div>
+
+        {/* Stock Disponible Card */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between group hover:border-slate-300 transition-all">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Stock Disponible</span>
+            <div className="bg-slate-50 p-2 rounded-lg text-slate-400"><Package size={20} /></div>
+          </div>
+          <div className="space-y-3 flex-1 flex flex-col justify-center">
+            <div>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Véhicules en Stock</span>
+              <h3 className="text-xl font-black text-slate-400">--</h3>
+              <div className="text-[9px] text-slate-400 mt-0.5 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-300 inline-block"></span>
+                Module bientôt disponible
+              </div>
+            </div>
+            <div className="pt-2 border-t border-slate-100">
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Intégration</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold bg-slate-100 text-slate-500 rounded mt-0.5">
+                En attente d'activation
+              </span>
+            </div>
+          </div>
+          <div className="absolute right-0 bottom-0 w-20 h-20 text-slate-50 pointer-events-none translate-x-3 translate-y-3">
+            <Package className="w-full h-full" />
           </div>
         </div>
       </div>

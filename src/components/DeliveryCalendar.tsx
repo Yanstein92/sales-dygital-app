@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Calendar as CalendarIcon, Clock, Plus, X, ChevronLeft, ChevronRight, User, Car, Settings, Check, CheckCircle2, AlertCircle, Trash2, History, ClipboardCopy, Printer, ArrowRight, Save, Info, RefreshCw, Bell, Search } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Plus, X, ChevronLeft, ChevronRight, User, Car, Settings, Check, CheckCircle2, AlertCircle, Trash2, History, ClipboardCopy, Printer, ArrowRight, Save, Info, RefreshCw, Bell, Search, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { db, doc, setDoc, getDoc, getUserDocPath } from '../lib/firebase';
 import { useApp } from '../lib/context';
 import { Sale } from '../types';
@@ -28,6 +28,7 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [calendarViewMode, setCalendarViewMode] = useState<'day' | 'week' | 'month'>('month');
+  const [showPendingSidebar, setShowPendingSidebar] = useState(true);
   
   // Configuration states
   const [config, setConfig] = useState<DeliveryConfig>({
@@ -466,9 +467,9 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50 min-h-screen">
+    <div className="space-y-6 animate-fade-in-up pb-12">
       {/* Top Banner with Navigation Tabs */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 p-6 text-white shadow-md border-b border-indigo-900 relative overflow-hidden">
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
         <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-10 bg-[radial-gradient(circle_at_top_right,var(--color-indigo-400),transparent_50%)] pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
@@ -508,102 +509,104 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
         </div>
       </div>
 
-      <div className="p-6 w-full max-w-[1600px] mx-auto">
+      <div className="w-full">
         {/* ==================== TAB: CALENDAR ==================== */}
         {activeTab === 'calendar' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             
             {/* Left Column: Vehicles to Program */}
-            <div className="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 flex flex-col h-[calc(100vh-220px)] min-h-[450px]">
-              <div className="mb-4 text-slate-800">
-                <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
-                  Véhicules à planifier ({pendingPlanificationSales.length})
-                </h3>
-                <p className="text-xs text-slate-400 mt-1">Dossiers d'achat déjà facturés sans date de sortie programmée.</p>
-              </div>
+            {showPendingSidebar && (
+              <div className="lg:col-span-3 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 flex flex-col h-[calc(100vh-220px)] min-h-[450px]">
+                <div className="mb-4 text-slate-800">
+                  <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                    Véhicules à planifier ({pendingPlanificationSales.length})
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">Dossiers d'achat déjà facturés sans date de sortie programmée.</p>
+                </div>
 
-              {/* Search input to filter vehicles to schedule */}
-              <div className="relative mb-4">
-                <Search className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400 h-full pointer-events-none" size={14} />
-                <input 
-                  type="text"
-                  placeholder="Rechercher par client, modèle, VIN, BDC..."
-                  value={searchQueryToPlan}
-                  onChange={(e) => setSearchQueryToPlan(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white text-slate-800 placeholder-slate-400 transition-all"
-                />
-                {searchQueryToPlan && (
-                  <button 
-                    onClick={() => setSearchQueryToPlan('')} 
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-
-              {/* Scrollable list of pending vehicles */}
-              <div className="space-y-3 overflow-y-auto flex-1 pr-1">
-                {pendingPlanificationSales.length === 0 ? (
-                  <div className="text-center py-12 text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
-                    <CheckCircle2 className="mx-auto mb-3 text-slate-200" size={32} />
-                    <p className="text-xs font-bold uppercase tracking-wider">Tout est planifié !</p>
-                    <p className="text-[10px] text-slate-400 mt-1 px-4">Aucun véhicule facturé en attente de programmation.</p>
-                  </div>
-                ) : (
-                  pendingPlanificationSales.map(sale => (
-                    <div 
-                      key={sale.id} 
-                      draggable="true"
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData("text/plain", sale.id);
-                      }}
-                      onClick={() => setViewingVehicleSale(sale)}
-                      className="bg-slate-50 hover:bg-blue-50/40 border border-slate-200/50 hover:border-blue-300 p-4 rounded-xl transition-all space-y-3 shadow-inner cursor-grab active:cursor-grabbing hover:shadow-md group/card"
-                      title="Glisser vers une date du calendrier ou cliquer pour voir les détails"
+                {/* Search input to filter vehicles to schedule */}
+                <div className="relative mb-4">
+                  <Search className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400 h-full pointer-events-none" size={14} />
+                  <input 
+                    type="text"
+                    placeholder="Rechercher par client, modèle, VIN, BDC..."
+                    value={searchQueryToPlan}
+                    onChange={(e) => setSearchQueryToPlan(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white text-slate-800 placeholder-slate-400 transition-all"
+                  />
+                  {searchQueryToPlan && (
+                    <button 
+                      onClick={() => setSearchQueryToPlan('')} 
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
                     >
-                      <div className="flex justify-between items-start">
-                        <div className="min-w-0">
-                          <span className="bg-amber-100 text-amber-800 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-amber-200">Facturé</span>
-                          <h4 className="font-extrabold text-slate-800 text-sm mt-1.5 truncate group-hover/card:text-blue-900 transition-colors">{sale.marque} {sale.modele}</h4>
-                          <p className="text-xs text-slate-500 truncate">Client: {sale.clientName}</p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <span className="text-[10px] font-bold font-mono text-slate-400">BDC {sale.bdcNumber}</span>
-                        </div>
-                      </div>
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
 
-                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/50">
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            copyBookingLink(sale.id);
-                          }}
-                          className="text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-200 font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white transition-colors flex items-center gap-1 cursor-pointer"
-                          title="Copier le lien public de réservation client"
-                        >
-                          <ClipboardCopy size={13} /> Lien client
-                        </button>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIsPlanningSale(sale);
-                            setPlanningSlot(config.slots[0] || '');
-                          }}
-                          className="text-xs bg-slate-900 hover:bg-slate-800 text-white font-black px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                        >
-                          Placer <ArrowRight size={13} />
-                        </button>
-                      </div>
+                {/* Scrollable list of pending vehicles */}
+                <div className="space-y-3 overflow-y-auto flex-1 pr-1">
+                  {pendingPlanificationSales.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
+                      <CheckCircle2 className="mx-auto mb-3 text-slate-200" size={32} />
+                      <p className="text-xs font-bold uppercase tracking-wider">Tout est planifié !</p>
+                      <p className="text-[10px] text-slate-400 mt-1 px-4">Aucun véhicule facturé en attente de programmation.</p>
                     </div>
-                  ))
-                )}
+                  ) : (
+                    pendingPlanificationSales.map(sale => (
+                      <div 
+                        key={sale.id} 
+                        draggable="true"
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("text/plain", sale.id);
+                        }}
+                        onClick={() => setViewingVehicleSale(sale)}
+                        className="bg-slate-50 hover:bg-blue-50/40 border border-slate-200/50 hover:border-blue-300 p-4 rounded-xl transition-all space-y-3 shadow-inner cursor-grab active:cursor-grabbing hover:shadow-md group/card"
+                        title="Glisser vers une date du calendrier ou cliquer pour voir les détails"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="min-w-0">
+                            <span className="bg-amber-100 text-amber-800 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-amber-200">Facturé</span>
+                            <h4 className="font-extrabold text-slate-800 text-sm mt-1.5 truncate group-hover/card:text-blue-900 transition-colors">{sale.marque} {sale.modele}</h4>
+                            <p className="text-xs text-slate-500 truncate">Client: {sale.clientName}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className="text-[10px] font-bold font-mono text-slate-400">BDC {sale.bdcNumber}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/50">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copyBookingLink(sale.id);
+                            }}
+                            className="text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-200 font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white transition-colors flex items-center gap-1 cursor-pointer"
+                            title="Copier le lien public de réservation client"
+                          >
+                            <ClipboardCopy size={13} /> Lien client
+                          </button>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsPlanningSale(sale);
+                              setPlanningSlot(config.slots[0] || '');
+                            }}
+                            className="text-xs bg-slate-900 hover:bg-slate-800 text-white font-black px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            Placer <ArrowRight size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Right Column: Calendar Grid */}
-            <div className="lg:col-span-8 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5">
+            <div className={`${showPendingSidebar ? 'lg:col-span-9' : 'lg:col-span-12'} bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5`}>
               {/* Calendar Grid Controller */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-slate-100">
                 <div className="flex items-center gap-2">
@@ -614,6 +617,15 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-3">
+                  {/* Collapse/Expand Sidebar Toggle */}
+                  <button 
+                    onClick={() => setShowPendingSidebar(!showPendingSidebar)} 
+                    className="p-2.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-blue-600 hover:border-blue-200 rounded-xl transition-all cursor-pointer flex items-center justify-center relative group shadow-sm"
+                    title={showPendingSidebar ? "Plein écran (Masquer les dossiers)" : "Afficher les dossiers à planifier"}
+                  >
+                    {showPendingSidebar ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+                  </button>
+
                   <button 
                     onClick={handleTodayClick} 
                     className="text-xs font-bold uppercase tracking-wider px-3.5 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-slate-700 transition-colors cursor-pointer"

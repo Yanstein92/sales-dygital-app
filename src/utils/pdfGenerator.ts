@@ -133,7 +133,7 @@ export async function generateRefundPDF(sale: Sale, refund: RefundPDFData, userP
     doc.setLineWidth(0.35);
     doc.line(44, topY, 44, topY + 15);
 
-    compDetailsStartX = 38;
+    compDetailsStartX = 10;
   }
 
   // Draw Company Details

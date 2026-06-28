@@ -13,7 +13,9 @@ export const Dashboard: React.FC<{
   onSelectSale: (saleId: string) => void;
   onProcessPdf: (file: File) => void;
   onManualEntry: () => void;
-}> = ({ onSelectSale, onProcessPdf, onManualEntry }) => {
+  searchQuery?: string;
+  setSearchQuery?: (q: string) => void;
+}> = ({ onSelectSale, onProcessPdf, onManualEntry, searchQuery: propSearchQuery, setSearchQuery: propSetSearchQuery }) => {
   const { sales, payments, userProfile, teamMembers, databaseUid } = useApp();
 
   
@@ -24,7 +26,9 @@ export const Dashboard: React.FC<{
   const [filterFacture, setFilterFacture] = useState('Tous'); // 'Tous', 'Facturé', 'Non facturé', 'Remboursé'
   const [showFilters, setShowFilters] = useState(true);
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [localSearchQuery, setLocalSearchQuery] = useState('');
+  const searchQuery = propSearchQuery !== undefined ? propSearchQuery : localSearchQuery;
+  const setSearchQuery = propSetSearchQuery !== undefined ? propSetSearchQuery : setLocalSearchQuery;
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
   const [isDragging, setIsDragging] = useState(false);
 

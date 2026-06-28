@@ -90,6 +90,8 @@ export interface UserProfile {
   maxClients?: number;
   companiesList?: string[];
   companiesDetails?: CompanyDetails[];
+  avatarUrl?: string;
+  phone?: string;
 }
 
 export interface AppState {

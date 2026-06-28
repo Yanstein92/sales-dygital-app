@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, CheckCircle2, LogOut, Users, Edit2, Check, KeyRound, LayoutDashboard, Car, ShieldCheck, Activity, Menu, X, Trash2, TrendingUp, Calendar as CalendarIcon, Clock } from 'lucide-react';
+import { Loader2, CheckCircle2, LogOut, Users, Edit2, Check, KeyRound, LayoutDashboard, Car, ShieldCheck, Activity, Menu, X, Trash2, TrendingUp, Calendar as CalendarIcon, Clock, Search, Bell, ChevronDown, Globe } from 'lucide-react';
 import { AppProvider, useApp } from './lib/context';
 import { auth, signOut, db, doc, setDoc, getUserDocPath } from './lib/firebase';
 import { CustomLogo } from './components/CustomLogo';
@@ -13,6 +13,8 @@ import { CompanyManagement } from './components/CompanyManagement';
 import { AdminPerformanceDashboard } from './components/AdminPerformanceDashboard';
 import { DeliveryCalendar } from './components/DeliveryCalendar';
 import { ClientBooking } from './components/ClientBooking';
+import { MyAccount } from './components/MyAccount';
+import { NotificationsView, Notification } from './components/NotificationsView';
 import { Sale } from './types';
 // PDF parsing logic pulled into helper to keep App clean
 const processPDFFile = async (
@@ -206,6 +208,49 @@ const MainAppContent: React.FC = () => {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showManageCompanies, setShowManageCompanies] = useState(false);
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentLanguage, setCurrentLanguage] = useState({ code: 'fr', name: 'French', flag: '🇫🇷' });
+  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
+  const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([
+    {
+      id: 'notif-1',
+      title: 'Nouveau BDC importé',
+      description: 'Yanis Khelifi vient de scanner un PDF pour un nouveau client.',
+      time: 'Il y a 5 min',
+      type: 'bdc',
+      targetHash: 'dashboard',
+      read: false
+    },
+    {
+      id: 'notif-2',
+      title: 'Sortie de véhicule confirmée',
+      description: 'Le véhicule immatriculé AA-123-BB est marqué comme sorti.',
+      time: 'Il y a 2h',
+      type: 'release',
+      targetHash: 'delivery_calendar',
+      read: false
+    },
+    {
+      id: 'notif-3',
+      title: 'Remboursement de décharge',
+      description: 'Une décharge de remboursement a été émise avec succès.',
+      time: 'Il y a 1 jour',
+      type: 'refund',
+      targetHash: 'dashboard',
+      read: false
+    },
+    {
+      id: 'notif-4',
+      title: 'Bienvenue sur Sales Dygital',
+      description: 'Votre espace de vente sécurisé est prêt et configuré.',
+      time: 'Il y a 2 jours',
+      type: 'system',
+      targetHash: 'dashboard',
+      read: true
+    }
+  ]);
+
   const currentCompanyDetails = userProfile?.companiesDetails?.find(
     c => c.name.toUpperCase() === userProfile?.companyId?.toUpperCase()
   );
@@ -249,6 +294,10 @@ const MainAppContent: React.FC = () => {
         } else {
           window.location.hash = 'dashboard';
         }
+      } else if (hash === '#my_account') {
+        setCurrentView('my_account');
+      } else if (hash === '#notifications') {
+        setCurrentView('notifications');
       } else {
         setSelectedSaleId(null);
         setCurrentView('dashboard');
@@ -530,124 +579,10 @@ const MainAppContent: React.FC = () => {
           </nav>
         </div>
 
-        <div className="flex flex-col items-center gap-4 w-full px-2">
-          {/* User profile avatar, clickable to change password */}
-          {userProfile && (
-            <div className="relative">
-              <button 
-                onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className="w-10 h-10 rounded-full bg-slate-800 hover:bg-indigo-600 border border-slate-700 hover:border-white transition-all duration-200 flex items-center justify-center font-black text-xs text-slate-300 hover:text-white cursor-pointer"
-                title="Mon Compte & Paramètres"
-              >
-                {userProfile.name.slice(0, 2).toUpperCase()}
-              </button>
-
-              {showProfileMenu && (
-                <>
-                  {/* Backdrop click closer */}
-                  <div className="fixed inset-0 z-40 cursor-default" onClick={() => setShowProfileMenu(false)} />
-                  
-                  {/* Popover Card */}
-                  <div className="fixed bottom-24 left-4 md:left-6 w-80 bg-white border border-slate-200 shadow-2xl rounded-2xl p-5 z-50 animate-fade-in text-slate-900 flex flex-col gap-4">
-                    {/* Header profile info */}
-                    <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center font-black text-xs text-white">
-                        {userProfile.name.slice(0, 2).toUpperCase()}
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-sm font-black text-slate-800 truncate">{userProfile.name}</span>
-                        <span className="text-[10px] text-slate-400 truncate">{userProfile.email}</span>
-                        <span className="text-[9px] uppercase bg-slate-100 text-slate-600 self-start px-1.5 py-0.5 rounded font-black mt-1">
-                          {userProfile.role}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Account actions */}
-                    <div className="flex flex-col gap-1">
-                      <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">Mon Compte</p>
-                      
-                      <button 
-                        onClick={() => {
-                          setShowProfileMenu(false);
-                          handleUserChangeName();
-                        }}
-                        className="flex items-center gap-2 px-2.5 py-2 hover:bg-slate-50 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-bold transition-all text-left"
-                      >
-                        <Edit2 size={14} className="text-blue-500" />
-                        <span>Modifier mon nom</span>
-                      </button>
-
-                      <button 
-                        onClick={() => {
-                          setShowProfileMenu(false);
-                          handleUserChangePassword();
-                        }}
-                        className="flex items-center gap-2 px-2.5 py-2 hover:bg-slate-50 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-bold transition-all text-left"
-                      >
-                        <KeyRound size={14} className="text-blue-500" />
-                        <span>Modifier mon mot de passe</span>
-                      </button>
-                    </div>
-
-                    {/* Organization settings */}
-                    <div className="flex flex-col gap-1 border-t border-slate-100 pt-3">
-                      <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">Mon Entreprise</p>
-                      
-                      <div className="flex items-center justify-between px-2.5 py-1 text-slate-700">
-                        <span className="text-xs font-bold text-slate-500">Nom actuel :</span>
-                        <span className="text-xs font-black text-slate-800">{userProfile.companyId}</span>
-                      </div>
-
-                      {userProfile.role === 'admin' && (
-                        <>
-                          <button 
-                            onClick={() => {
-                              setShowProfileMenu(false);
-                              window.location.hash = 'team_management';
-                            }}
-                            className="flex items-center gap-2 px-2.5 py-2 hover:bg-slate-50 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-bold transition-all text-left"
-                          >
-                            <Users size={14} className="text-slate-500" />
-                            <span>Gérer l'équipe</span>
-                          </button>
-
-                          <button 
-                            onClick={() => {
-                              setShowProfileMenu(false);
-                              window.location.hash = 'company_management';
-                            }}
-                            className="flex items-center gap-2 px-2.5 py-2 hover:bg-slate-50 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-bold transition-all text-left"
-                          >
-                            <Car size={14} className="text-slate-500" />
-                            <span>Gestion des Entreprises</span>
-                          </button>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Logout */}
-                    <button 
-                      onClick={() => {
-                        setShowProfileMenu(false);
-                        handleLogout();
-                      }}
-                      className="flex items-center justify-center gap-2 w-full mt-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/50 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer"
-                    >
-                      <LogOut size={14} />
-                      <span>Se déconnecter</span>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          <div className="h-px w-8 bg-slate-800"></div>
-
+        <div className="flex flex-col items-center gap-4 w-full px-2 mt-auto">
           <button 
             onClick={handleLogout} 
-            className="p-3 rounded-xl text-slate-500 hover:text-red-400 hover:bg-red-950/20 w-full flex flex-col items-center justify-center gap-1 transition-all group relative"
+            className="p-3 rounded-xl text-slate-500 hover:text-red-400 hover:bg-red-950/20 w-full flex flex-col items-center justify-center gap-1 transition-all group relative cursor-pointer"
             title="Déconnexion"
           >
             <LogOut size={20} />
@@ -659,15 +594,15 @@ const MainAppContent: React.FC = () => {
       {/* MAIN CONTAINER next to Sidebar */}
       <div className="flex-1 flex flex-col overflow-hidden h-full">
         {/* UPPER MAIN HEADER */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 shadow-sm z-20">
+        <header className="h-20 bg-white border-b border-slate-100/90 flex items-center justify-between px-8 shrink-0 z-20 relative select-none">
           {/* Left: Breadcrumbs & Company Renamer */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-6">
             <div className="flex flex-col">
-              <div className="flex items-center gap-1 text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+              <div className="flex items-center gap-1.5 text-[10px] uppercase font-extrabold text-slate-400 tracking-wider">
                 <span>Sales Dygital</span>
-                <span>/</span>
+                <span className="text-slate-300">/</span>
                 <span className="text-slate-600 font-black">
-                  {currentView === 'dashboard' ? 'Bons de commande' : currentView === 'detail' ? 'Détails du dossier' : currentView === 'delivery_calendar' ? 'Calendrier des sorties' : 'Validation' }
+                  {currentView === 'dashboard' ? 'Bons de commande' : currentView === 'detail' ? 'Détails du dossier' : currentView === 'delivery_calendar' ? 'Calendrier des sorties' : currentView === 'my_account' ? 'Mon Compte' : currentView === 'notifications' ? 'Notifications' : 'Validation' }
                 </span>
               </div>
               <div className="flex items-center gap-2 group mt-0.5">
@@ -684,56 +619,332 @@ const MainAppContent: React.FC = () => {
                       type="text"
                       value={newCompanyName}
                       onChange={(e) => setNewCompanyName(e.target.value)}
-                      className="bg-slate-100 text-slate-800 border border-slate-300 rounded px-2 py-0.5 text-sm outline-none focus:border-blue-500 font-bold max-w-[150px]"
+                      className="bg-slate-100 text-slate-800 border border-slate-300 rounded px-2 py-0.5 text-xs outline-none focus:border-blue-500 font-bold max-w-[150px]"
                       autoFocus
                       onBlur={handleRenameCompany}
                     />
                   </form>
                 ) : (
                   <div className="flex items-center gap-1.5">
-                    <span className="text-sm font-black text-slate-800">
+                    <span className="text-xs font-black text-slate-700">
                       {userProfile?.companyId || 'Entreprise'}
                     </span>
                   </div>
                 )}
               </div>
             </div>
+
+            {/* Vertical divider */}
+            <div className="h-8 w-px bg-slate-200 hidden md:block"></div>
+
+            {/* Search Input inspired by DashStack UI Kit */}
+            <div className="relative hidden md:block w-72 lg:w-96">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <Search className="h-4 w-4 text-slate-400" />
+              </div>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (currentView !== 'dashboard') {
+                    window.location.hash = 'dashboard';
+                  }
+                }}
+                className="block w-full pl-10 pr-10 py-2.5 border border-slate-200 bg-slate-50 hover:bg-slate-100/50 focus:bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600/80 rounded-full text-xs font-semibold transition-all"
+                placeholder="Rechercher un dossier..."
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Right actions & KPIs */}
-          <div className="flex items-center gap-4">
-            {userProfile?.role === 'admin' && (
-              <button
-                onClick={() => window.location.hash = currentView === 'perf_dashboard' ? 'dashboard' : 'perf_dashboard'}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all duration-200 border shadow-sm cursor-pointer ${
-                  currentView === 'perf_dashboard'
-                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-indigo-600/20 hover:bg-indigo-500'
-                    : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700 hover:text-indigo-600'
-                }`}
-              >
-                <TrendingUp size={14} />
-                <span>{currentView === 'perf_dashboard' ? 'Voir Ventes' : 'Performances'}</span>
-              </button>
-            )}
+          {/* Right actions, Notifications, Language, and Profile in DashStack style */}
+          <div className="flex items-center gap-6">
 
-            {/* Portefeuille actif KPI (Forte valeur ajoutée artisanale) */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-1.5 flex flex-col text-right shadow-inner">
-              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Portefeuille actif</span>
-              <span className="text-xs font-black text-slate-800">
-                {(totalPortfolio).toLocaleString('fr-FR')} €
-              </span>
+            {/* Notification Bell with red badge */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowNotificationsDropdown(!showNotificationsDropdown);
+                  setShowLanguageDropdown(false);
+                  setShowProfileMenu(false);
+                }}
+                className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all cursor-pointer relative ${
+                  showNotificationsDropdown 
+                    ? 'bg-blue-50 border-blue-200 text-blue-600 shadow-sm' 
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+                title="Notifications"
+              >
+                <Bell size={18} />
+                {notifications.filter(n => !n.read).length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black h-4 w-4 rounded-full flex items-center justify-center shadow-md animate-pulse">
+                    {notifications.filter(n => !n.read).length}
+                  </span>
+                )}
+              </button>
+
+              {/* Notifications Dropdown menu */}
+              {showNotificationsDropdown && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowNotificationsDropdown(false)} />
+                  <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-100 shadow-2xl rounded-2xl p-4 z-50 text-xs text-slate-700 flex flex-col gap-3 animate-fade-in">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <span className="font-bold text-slate-800 text-sm">Notifications</span>
+                      {notifications.filter(n => !n.read).length > 0 ? (
+                        <span className="bg-red-50 text-red-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
+                          {notifications.filter(n => !n.read).length} nouvelles
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-[10px] font-bold">Aucune nouvelle</span>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
+                      {notifications.map((notif) => (
+                        <div
+                          key={notif.id}
+                          onClick={() => {
+                            // Mark as read
+                            setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, read: true } : n));
+                            setShowNotificationsDropdown(false);
+                            if (notif.targetHash) {
+                              window.location.hash = notif.targetHash;
+                            }
+                          }}
+                          className={`p-2 hover:bg-slate-50 rounded-xl flex gap-2.5 items-start transition-all cursor-pointer relative ${
+                            !notif.read ? 'bg-blue-50/20' : ''
+                          }`}
+                        >
+                          <div className={`w-2 h-2 mt-1.5 rounded-full shrink-0 ${
+                            !notif.read ? 'bg-blue-600' : 'bg-slate-200'
+                          }`}></div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-slate-800 truncate">{notif.title}</p>
+                            <p className="text-[10px] text-slate-400 truncate">{notif.description}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowNotificationsDropdown(false);
+                        window.location.hash = 'notifications';
+                      }}
+                      className="w-full text-center py-2.5 border-t border-slate-100 text-xs font-black text-blue-600 hover:text-blue-700 transition-all cursor-pointer mt-1 block"
+                    >
+                      Voir toutes les notifications
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
 
-            {/* Logged in User Tag */}
+            {/* Language Dropdown inspired by DashStack */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowLanguageDropdown(!showLanguageDropdown);
+                  setShowNotificationsDropdown(false);
+                  setShowProfileMenu(false);
+                }}
+                className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-full hover:bg-slate-50 transition-all text-xs font-bold text-slate-700 cursor-pointer shadow-xs"
+              >
+                <span>{currentLanguage.flag}</span>
+                <span className="hidden sm:inline">{currentLanguage.name}</span>
+                <ChevronDown size={14} className={`text-slate-400 transition-transform ${showLanguageDropdown ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Languages Dropdown menu */}
+              {showLanguageDropdown && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowLanguageDropdown(false)} />
+                  <div className="absolute right-0 mt-2 w-44 bg-white border border-slate-100 shadow-xl rounded-2xl p-2 z-50 text-xs text-slate-700 flex flex-col gap-1 animate-fade-in">
+                    <p className="px-3 py-1 text-[10px] text-slate-400 font-bold uppercase tracking-wider">Select Language</p>
+                    
+                    {/* English (greyed out) */}
+                    <div
+                      className="flex items-center gap-2.5 px-3 py-2 text-slate-400 opacity-60 rounded-lg text-left font-medium w-full select-none cursor-not-allowed"
+                      title="Bientôt disponible"
+                    >
+                      <span>🇬🇧</span>
+                      <span>English</span>
+                      <span className="ml-auto text-[9px] font-bold bg-slate-100 text-slate-400 px-1 py-0.5 rounded uppercase">Bientôt</span>
+                    </div>
+
+                    {/* French (active) */}
+                    <button
+                      onClick={() => {
+                        setCurrentLanguage({ code: 'fr', name: 'French', flag: '🇫🇷' });
+                        setShowLanguageDropdown(false);
+                      }}
+                      className="flex items-center gap-2.5 px-3 py-2 hover:bg-slate-50 rounded-lg text-left font-bold text-slate-700 w-full"
+                    >
+                      <span>🇫🇷</span>
+                      <span>French</span>
+                      {currentLanguage.code === 'fr' && <Check size={12} className="ml-auto text-blue-600" />}
+                    </button>
+
+                    {/* Spanish (greyed out) */}
+                    <div
+                      className="flex items-center gap-2.5 px-3 py-2 text-slate-400 opacity-60 rounded-lg text-left font-medium w-full select-none cursor-not-allowed"
+                      title="Bientôt disponible"
+                    >
+                      <span>🇪🇸</span>
+                      <span>Spanish</span>
+                      <span className="ml-auto text-[9px] font-bold bg-slate-100 text-slate-400 px-1 py-0.5 rounded uppercase">Bientôt</span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Avatar & User Details dropdown trigger */}
             {userProfile && (
-              <div className="hidden md:flex items-center gap-2">
-                <div className="text-xs font-black text-slate-700 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-sm">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]"></span>
-                  {userProfile.name}
-                  <span className="text-[9px] uppercase bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded ml-1 font-bold">
-                    {userProfile.role}
-                  </span>
-                </div>
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    setShowProfileMenu(!showProfileMenu);
+                    setShowLanguageDropdown(false);
+                    setShowNotificationsDropdown(false);
+                  }}
+                  className="flex items-center gap-3 text-left focus:outline-none cursor-pointer group"
+                >
+                  {userProfile.avatarUrl ? (
+                    userProfile.avatarUrl.startsWith('data:image') ? (
+                      <img 
+                        src={userProfile.avatarUrl} 
+                        alt="Profile Avatar" 
+                        className="w-10 h-10 rounded-full object-cover border border-slate-200 shadow-sm group-hover:ring-2 group-hover:ring-blue-100 transition-all"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl bg-slate-100 border border-slate-200 shadow-sm group-hover:ring-2 group-hover:ring-blue-100 transition-all">
+                        {userProfile.avatarUrl}
+                      </div>
+                    )
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center font-black text-xs text-white shadow-md ring-2 ring-slate-100 group-hover:ring-blue-100 transition-all">
+                      {userProfile.name.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="hidden md:flex flex-col">
+                    <span className="text-xs font-black text-slate-800 leading-tight group-hover:text-blue-600 transition-colors">
+                      {userProfile.name}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mt-0.5">
+                      {userProfile.role === 'admin' ? 'Admin' : userProfile.role === 'park_manager' ? 'Park Manager' : 'Commercial'}
+                    </span>
+                  </div>
+                  <ChevronDown size={14} className={`text-slate-400 transition-transform ${showProfileMenu ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Profile menu dropdown (repositioned absolute to header) */}
+                {showProfileMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
+                    <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 shadow-2xl rounded-2xl p-5 z-50 animate-fade-in text-slate-900 flex flex-col gap-4">
+                      {/* Header profile info */}
+                      <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+                        {userProfile.avatarUrl ? (
+                          userProfile.avatarUrl.startsWith('data:image') ? (
+                            <img 
+                              src={userProfile.avatarUrl} 
+                              alt="Profile Avatar" 
+                              className="w-10 h-10 rounded-full object-cover border border-slate-200 shadow-sm"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl bg-slate-100 border border-slate-200 shadow-sm">
+                              {userProfile.avatarUrl}
+                            </div>
+                          )
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center font-black text-xs text-white">
+                            {userProfile.name.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-sm font-black text-slate-800 truncate">{userProfile.name}</span>
+                          <span className="text-[10px] text-slate-400 truncate">{userProfile.email}</span>
+                          <span className="text-[9px] uppercase bg-slate-100 text-slate-600 self-start px-1.5 py-0.5 rounded font-black mt-1">
+                            {userProfile.role}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Account actions */}
+                      <div className="flex flex-col gap-1">
+                        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">Mon Espace</p>
+                        
+                        <button 
+                          onClick={() => {
+                            setShowProfileMenu(false);
+                            window.location.hash = 'my_account';
+                          }}
+                          className="flex items-center gap-2 px-2.5 py-2.5 bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-600 rounded-xl text-xs font-bold transition-all text-left w-full cursor-pointer border border-slate-100/85 hover:border-blue-100"
+                        >
+                          <Users size={14} className="text-blue-500" />
+                          <span>Mon Compte & Paramètres</span>
+                        </button>
+                      </div>
+
+                      {/* Organization settings */}
+                      <div className="flex flex-col gap-1 border-t border-slate-100 pt-3">
+                        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">Mon Entreprise</p>
+                        
+                        <div className="flex items-center justify-between px-2.5 py-1 text-slate-700">
+                          <span className="text-xs font-bold text-slate-500">Nom actuel :</span>
+                          <span className="text-xs font-black text-slate-800">{userProfile.companyId}</span>
+                        </div>
+
+                        {userProfile.role === 'admin' && (
+                          <>
+                            <button 
+                              onClick={() => {
+                                setShowProfileMenu(false);
+                                window.location.hash = 'team_management';
+                              }}
+                              className="flex items-center gap-2 px-2.5 py-2 hover:bg-slate-50 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-bold transition-all text-left w-full"
+                            >
+                              <Users size={14} className="text-slate-500" />
+                              <span>Gérer l'équipe</span>
+                            </button>
+
+                            <button 
+                              onClick={() => {
+                                setShowProfileMenu(false);
+                                window.location.hash = 'company_management';
+                              }}
+                              className="flex items-center gap-2 px-2.5 py-2 hover:bg-slate-50 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-bold transition-all text-left w-full"
+                            >
+                              <Car size={14} className="text-slate-500" />
+                              <span>Gestion des Entreprises</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Logout */}
+                      <button 
+                        onClick={() => {
+                          setShowProfileMenu(false);
+                          handleLogout();
+                        }}
+                        className="flex items-center justify-center gap-2 w-full mt-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/50 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer"
+                      >
+                        <LogOut size={14} />
+                        <span>Se déconnecter</span>
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -758,6 +969,8 @@ const MainAppContent: React.FC = () => {
                     setDraftExtraction({ isManual: true, bdcNumber: '', company: userProfile?.companyId || 'KDB AUTO', clientName: '', marque: '', modele: '', color: '', vin: '', plaque: '', mec: '', price: '', date: new Date().toISOString().split('T')[0], commercial: userProfile?.name || 'À assigner', phone: '', email: '', ref: '', address: '', zipCode: '', city: '', draftPayments: [] });
                     window.location.hash = 'pdf_validation';
                   }}
+                  searchQuery={searchQuery}
+                  setSearchQuery={setSearchQuery}
                 />
               )}
               {currentView === 'delivery_calendar' && (
@@ -796,6 +1009,18 @@ const MainAppContent: React.FC = () => {
               )}
               {currentView === 'company_management' && (
                 <CompanyManagement onClose={() => window.location.hash = 'dashboard'} onShowToast={showToast} />
+              )}
+              {currentView === 'my_account' && (
+                <MyAccount onBack={() => window.location.hash = 'dashboard'} onShowToast={showToast} />
+              )}
+              {currentView === 'notifications' && (
+                <NotificationsView 
+                  notifications={notifications}
+                  onMarkAsRead={(id) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))}
+                  onMarkAllAsRead={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
+                  onBack={() => window.location.hash = 'dashboard'}
+                  onNavigate={(hash) => window.location.hash = hash}
+                />
               )}
             </div>
           )}
