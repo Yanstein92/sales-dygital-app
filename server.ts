@@ -32,6 +32,38 @@ async function startServer() {
 
   // --- API Routes ---
   
+  app.post("/api/db/set", async (req, res) => {
+    try {
+      if (!getApps().length) return res.status(500).json({ error: "Firebase Admin n'est pas configuré." });
+      const { path, docId, data, merge } = req.body;
+      if (!path || !docId || !data) {
+        return res.status(400).json({ error: "Champs requis manquants." });
+      }
+      const docRef = getFirestore().doc(`${path}/${docId}`);
+      await docRef.set(data, { merge: merge !== false });
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Error setting doc server-side:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/db/delete", async (req, res) => {
+    try {
+      if (!getApps().length) return res.status(500).json({ error: "Firebase Admin n'est pas configuré." });
+      const { path, docId } = req.body;
+      if (!path || !docId) {
+        return res.status(400).json({ error: "Champs requis manquants." });
+      }
+      const docRef = getFirestore().doc(`${path}/${docId}`);
+      await docRef.delete();
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Error deleting doc server-side:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/sales", async (req, res) => {
     try {
       if (!getApps().length) return res.status(500).json({ error: "Firebase Admin n'est pas configuré." });

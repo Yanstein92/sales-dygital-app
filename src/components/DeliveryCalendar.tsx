@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Calendar as CalendarIcon, Clock, Plus, X, ChevronLeft, ChevronRight, User, Car, Settings, Check, CheckCircle2, AlertCircle, Trash2, History, ClipboardCopy, Printer, ArrowRight, Save, Info, RefreshCw, Bell, Search } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Plus, X, ChevronLeft, ChevronRight, User, Car, Settings, Check, CheckCircle2, AlertCircle, Trash2, History, ClipboardCopy, Printer, ArrowRight, Save, Info, RefreshCw, Bell, Search, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { db, doc, setDoc, getDoc, getUserDocPath } from '../lib/firebase';
 import { useApp } from '../lib/context';
 import { Sale } from '../types';
+import { generateDeliveryPDF } from '../utils/pdfGenerator';
+import { notifyFolderAction } from '../lib/notifications';
 
 interface DeliveryCalendarProps {
   onShowToast: (m: string, t: 'success' | 'error') => void;
@@ -19,7 +21,7 @@ interface DeliveryConfig {
 }
 
 export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast }) => {
-  const { sales, userProfile, databaseUid } = useApp();
+  const { sales, userProfile, databaseUid, teamMembers } = useApp();
   const canModifySortie = userProfile?.role === 'admin' || userProfile?.role === 'park_manager';
   
   // Navigation states
@@ -27,6 +29,7 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [calendarViewMode, setCalendarViewMode] = useState<'day' | 'week' | 'month'>('month');
+  const [showPendingSidebar, setShowPendingSidebar] = useState(true);
   
   // Configuration states
   const [config, setConfig] = useState<DeliveryConfig>({
@@ -147,6 +150,20 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
     await saveConfig(updatedConfig);
   };
 
+  useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.split('?')[1]);
+    const planSaleId = hashParams.get('planSaleId');
+    if (planSaleId && sales && sales.length > 0 && config.slots.length > 0) {
+      const sale = sales.find(s => s.id === planSaleId);
+      if (sale && sale.factureStatus === 'facture') {
+        setIsPlanningSale(sale);
+        setPlanningSlot(sale.deliverySlot || config.slots[0] || '');
+        // Clear param to avoid looping
+        window.history.replaceState(null, '', '#delivery_calendar');
+      }
+    }
+  }, [sales, config.slots]);
+
   // Handle Delivery Scheduling internally
   const handleScheduleDelivery = async (sale: Sale, date: string, slot: string) => {
     if (!databaseUid) return;
@@ -192,6 +209,15 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
       await setDoc(saleRef, updatedFields, { merge: true });
       onShowToast(`Livraison de ${sale.clientName} programmée avec succès.`, "success");
       setIsPlanningSale(null);
+
+      notifyFolderAction(
+        sale,
+        'release',
+        `Livraison planifiée (${sale.clientName})`,
+        `Une livraison a été planifiée pour le ${date} à ${slot} par ${userProfile?.name || 'un utilisateur'}.`,
+        teamMembers,
+        databaseUid
+      );
     } catch (e) {
       onShowToast("Erreur lors de la planification de la livraison.", "error");
     }
@@ -214,6 +240,15 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
         deliveryLog: [...existingLog, logEntry]
       }, { merge: true });
       onShowToast(`Véhicule marqué comme livré. Dossier clôturé !`, "success");
+
+      notifyFolderAction(
+        sale,
+        'release',
+        `Véhicule livré (${sale.clientName})`,
+        `Le véhicule a été livré et marqué comme sorti par ${userProfile?.name || 'un utilisateur'}.`,
+        teamMembers,
+        databaseUid
+      );
     } catch (e) {
       onShowToast("Erreur lors de la mise à jour.", "error");
     }
@@ -237,6 +272,15 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
         deliveryLog: [...existingLog, logEntry]
       }, { merge: true });
       onShowToast("Livraison annulée.", "success");
+
+      notifyFolderAction(
+        sale,
+        'release',
+        `Livraison annulée (${sale.clientName})`,
+        `La livraison pour ${sale.clientName} a été annulée par ${userProfile?.name || 'un utilisateur'}.`,
+        teamMembers,
+        databaseUid
+      );
     } catch (e) {
       onShowToast("Erreur lors de l'annulation.", "error");
     }
@@ -438,444 +482,171 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
   };
 
   // Print Discharge
-  const triggerPrintDischarge = () => {
+  const triggerPrintDischarge = async () => {
     if (!isGeneratingDischarge) return;
-    
-    // Generate text replacing variables
-    let text = config.dischargeText;
-    text = text.replace(/\[Client\]/g, isGeneratingDischarge.clientName || "Client");
-    text = text.replace(/\[Marque\]/g, isGeneratingDischarge.marque || "");
-    text = text.replace(/\[Modèle\]/g, isGeneratingDischarge.modele || "");
-    text = text.replace(/\[Plaque\]/g, isGeneratingDischarge.plaque || "Non immatriculé");
-    text = text.replace(/\[VIN\]/g, isGeneratingDischarge.vin || "");
-    text = text.replace(/\[Entreprise\]/g, isGeneratingDischarge.company || "Concessionnaire");
+    try {
+      // Fetch dynamic templates config if exists to apply custom settings
+      let pdfConfig: any = { ...config };
+      try {
+        const pdfConfigDocRef = doc(db, getUserDocPath(databaseUid) + '/settings/pdf_templates_config');
+        const pdfConfigSnap = await getDoc(pdfConfigDocRef);
+        if (pdfConfigSnap.exists()) {
+          pdfConfig = { ...pdfConfig, ...pdfConfigSnap.data() };
+        }
+      } catch (err) {
+        console.warn("Failed to load custom PDF templates config, using delivery settings fallback:", err);
+      }
 
-    // Recipient line
-    const recipientLine = dischargeForm.recipientType === 'client' 
-      ? `Acheteur d'origine : ${isGeneratingDischarge.clientName}`
-      : `Mandataire / Récupérateur : ${dischargeForm.recipientName} (Pièce d'identité : ${dischargeForm.recipientId || 'N/A'})`;
-
-    // Retrieve company details
-    const compName = isGeneratingDischarge.company || "Dygital";
-    const compDetail = userProfile?.companiesDetails?.find(c => c.name.toUpperCase() === compName.toUpperCase());
-
-    // Print Layout
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      onShowToast("Veuillez autoriser les popups pour imprimer la décharge.", "error");
-      return;
+      await generateDeliveryPDF(isGeneratingDischarge, dischargeForm as any, userProfile, pdfConfig);
+      onShowToast("Décharge de livraison PDF générée !", "success");
+      setIsGeneratingDischarge(null);
+    } catch (e) {
+      console.error(e);
+      onShowToast("Erreur lors de la génération de la décharge.", "error");
     }
-
-    const docDate = new Date().toLocaleDateString('fr-FR');
-    const docTitle = `decharge_${compName.replace(/\s+/g, '_')}_${isGeneratingDischarge.bdcNumber}_${docDate.replace(/\//g, '-')}`;
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>${docTitle}</title>
-          <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
-            body {
-              font-family: 'Inter', sans-serif;
-              color: #1e293b;
-              padding: 40px;
-              line-height: 1.6;
-              font-size: 14px;
-            }
-            .header {
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-start;
-              border-bottom: 2px solid #e2e8f0;
-              padding-bottom: 20px;
-              margin-bottom: 30px;
-            }
-            .company-name {
-              font-size: 24px;
-              font-weight: 900;
-              text-transform: uppercase;
-              letter-spacing: -0.5px;
-            }
-            .doc-title {
-              font-size: 20px;
-              font-weight: 700;
-              color: #0f172a;
-              margin-top: 10px;
-              text-transform: uppercase;
-              letter-spacing: 1px;
-            }
-            .section {
-              margin-bottom: 25px;
-            }
-            .section-title {
-              font-weight: 700;
-              text-transform: uppercase;
-              font-size: 12px;
-              letter-spacing: 1px;
-              color: #64748b;
-              border-bottom: 1px solid #f1f5f9;
-              padding-bottom: 5px;
-              margin-bottom: 15px;
-            }
-            .grid {
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 20px;
-              margin-bottom: 20px;
-            }
-            .info-box {
-              background: #f8fafc;
-              border: 1px solid #e2e8f0;
-              padding: 15px;
-              border-radius: 8px;
-            }
-            .info-label {
-              font-size: 11px;
-              font-weight: 700;
-              color: #64748b;
-              text-transform: uppercase;
-            }
-            .info-value {
-              font-size: 14px;
-              font-weight: 600;
-              color: #0f172a;
-              margin-top: 2px;
-            }
-            .checkbox-grid {
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 10px;
-              margin-top: 15px;
-            }
-            .checkbox-item {
-              display: flex;
-              align-items: center;
-              gap: 10px;
-              font-weight: 500;
-            }
-            .box {
-              width: 16px;
-              height: 16px;
-              border: 1.5px solid #0f172a;
-              display: inline-block;
-              position: relative;
-              border-radius: 3px;
-            }
-            .box.checked::after {
-              content: "✔";
-              position: absolute;
-              top: -3px;
-              left: 2px;
-              font-size: 12px;
-              color: #0f172a;
-            }
-            .discharge-text {
-              background: #f8fafc;
-              border-left: 4px solid #0f172a;
-              padding: 15px;
-              font-style: italic;
-              color: #334155;
-              margin-bottom: 30px;
-              border-radius: 0 8px 8px 0;
-            }
-            .signatures {
-              margin-top: 50px;
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 100px;
-            }
-            .sig-box {
-              height: 120px;
-              border: 1px dashed #cbd5e1;
-              border-radius: 8px;
-              padding: 15px;
-              display: flex;
-              flex-direction: column;
-              justify-content: space-between;
-              background: #fdfdfd;
-            }
-            .sig-title {
-              font-size: 12px;
-              font-weight: 700;
-              text-align: center;
-              color: #475569;
-              border-bottom: 1px solid #f1f5f9;
-              padding-bottom: 5px;
-            }
-            .footer {
-              text-align: center;
-              font-size: 11px;
-              color: #94a3b8;
-              margin-top: 80px;
-              border-top: 1px solid #e2e8f0;
-              padding-top: 15px;
-            }
-            @media print {
-              body { padding: 0; }
-              .sig-box { background: none; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header" style="display: flex; justify-content: space-between; align-items: start; border-bottom: 2px solid #0f172a; padding-bottom: 15px; margin-bottom: 25px;">
-            <div style="display: flex; align-items: center; gap: 15px;">
-              ${compDetail?.logoUrl ? `
-                <img src="${compDetail.logoUrl}" style="max-height: 60px; max-width: 150px; object-fit: contain;" />
-              ` : `
-                <div style="font-size: 24px; font-weight: 900; letter-spacing: -0.5px; color: #0f172a; border: 1.5px solid #0f172a; padding: 5px 12px; border-radius: 6px;">${compName}</div>
-              `}
-              <div style="border-left: 1.5px solid #e2e8f0; padding-left: 15px; font-size: 11px; color: #475569; line-height: 1.4;">
-                <div style="font-weight: 900; font-size: 13px; color: #0f172a; margin-bottom: 2px; text-transform: uppercase;">${compName}</div>
-                ${compDetail?.address ? `<div>${compDetail.address}</div>` : ''}
-                ${compDetail?.siret ? `<div>SIRET : ${compDetail.siret}</div>` : ''}
-                ${compDetail?.email ? `<div>Email : ${compDetail.email}</div>` : ''}
-                ${compDetail?.phone ? `<div>Tél : ${compDetail.phone}</div>` : ''}
-              </div>
-            </div>
-            <div style="text-align: right; line-height: 1.4;">
-              <div style="font-size: 20px; font-weight: 900; color: #0f172a; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px;">Décharge de Sortie</div>
-              <div style="font-size: 11px; color: #475569;">
-                <div>N° Bon de Commande : <strong>${isGeneratingDischarge.bdcNumber}</strong></div>
-                <div>Date de sortie : <strong>${docDate}</strong></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-title">Informations Véhicule</div>
-            <div class="grid">
-              <div class="info-box">
-                <div class="info-label">Marque / Modèle</div>
-                <div class="info-value">${isGeneratingDischarge.marque} ${isGeneratingDischarge.modele}</div>
-                <div style="margin-top: 10px;" class="info-label">Teinte / Couleur</div>
-                <div class="info-value">${isGeneratingDischarge.color || "Non renseigné"}</div>
-              </div>
-              <div class="info-box">
-                <div class="info-label font-mono">N° de Châssis (VIN)</div>
-                <div class="info-value font-mono">${isGeneratingDischarge.vin}</div>
-                <div style="margin-top: 10px;" class="info-label">Immatriculation</div>
-                <div class="info-value font-mono">${isGeneratingDischarge.plaque || "Non immatriculé"}</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-title">Destinataire / Mandataire</div>
-            <div class="info-box">
-              <div class="info-label">Bénéficiaire de la sortie</div>
-              <div class="info-value" style="font-size: 15px;">${recipientLine}</div>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-title">Attestation de sortie & conformité</div>
-            <div class="discharge-text">
-              "${text}"
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-title">Documents et éléments remis</div>
-            <div class="checkbox-grid">
-              <div class="checkbox-item">
-                <div class="box ${dischargeForm.checkedItems.FACTURE ? 'checked' : ''}"></div>
-                <span>FACTURE D'ACHAT</span>
-              </div>
-              <div class="checkbox-item">
-                <div class="box ${dischargeForm.checkedItems.CPI ? 'checked' : ''}"></div>
-                <span>CPI (Certificat Provisoire d'Immatriculation)</span>
-              </div>
-              <div class="checkbox-item">
-                <div class="box ${dischargeForm.checkedItems.CARTE_GRISE ? 'checked' : ''}"></div>
-                <span>CARTE GRISE / TITRE ÉTRANGER</span>
-              </div>
-              <div class="checkbox-item">
-                <div class="box ${dischargeForm.checkedItems.COC ? 'checked' : ''}"></div>
-                <span>COC (Certificat de Conformité)</span>
-              </div>
-              <div class="checkbox-item">
-                <div class="box ${dischargeForm.checkedItems.PASSEPORT ? 'checked' : ''}"></div>
-                <span>PASSEPORT / PIÈCE D'IDENTITÉ</span>
-              </div>
-              <div class="checkbox-item">
-                <div class="box ${dischargeForm.checkedItems.DOUBLE_DE_CLE ? 'checked' : ''}"></div>
-                <span>DOUBLE DE CLÉ</span>
-              </div>
-              <div class="checkbox-item">
-                <div class="box ${dischargeForm.checkedItems.CESSION ? 'checked' : ''}"></div>
-                <span>CERTIFICAT DE CESSION</span>
-              </div>
-              <div class="checkbox-item">
-                <div class="box ${dischargeForm.checkedItems.CHAINE_DE_PROPRIETE ? 'checked' : ''}"></div>
-                <span>CHAINE DE PROPRIÉTÉ</span>
-              </div>
-              ${dischargeForm.checkedItems.AUTRE ? `
-              <div class="checkbox-item" style="grid-column: span 2; margin-top: 5px;">
-                <div class="box checked"></div>
-                <span style="font-style: italic; color: #475569;">Autre : ${dischargeForm.autreCommentaire || "N/A"}</span>
-              </div>
-              ` : ''}
-            </div>
-          </div>
-
-          <div class="signatures">
-            <div class="sig-box">
-              <div class="sig-title">Signature du client / mandataire</div>
-              <div style="font-size: 11px; color: #94a3b8; text-align: center;">Mention manuscrite "Bon pour décharge de sortie"</div>
-            </div>
-            <div class="sig-box">
-              <div class="sig-title">Le concessionnaire (${compName})</div>
-              <div style="font-size: 11px; color: #94a3b8; text-align: center;">Nom et signature du préparateur</div>
-            </div>
-          </div>
-
-          <div class="footer">
-            Document généré numériquement par ${compName}. Fait à la date du ${docDate}.
-          </div>
-
-          <script>
-            window.onload = function() {
-              window.print();
-            }
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    onShowToast("Impression lancée.", "success");
-    setIsGeneratingDischarge(null);
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50 min-h-screen">
+    <div className="space-y-6 animate-fade-in-up pb-12">
       {/* Top Banner with Navigation Tabs */}
-      <div className="bg-slate-900 text-white p-6 shadow-md border-b border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-black flex items-center gap-2.5">
-            <CalendarIcon className="text-blue-400" size={26} /> Calendrier des Sorties
-          </h2>
-          <p className="text-sm text-slate-400 mt-1">Gérez la préparation des véhicules facturés, programmez les rendez-vous et générez les décharges.</p>
-        </div>
-        
-        {/* Tab Controls */}
-        <div className="flex bg-slate-800 p-1.5 rounded-xl border border-slate-700/80">
-          <button 
-            onClick={() => setActiveTab('calendar')}
-            className={`px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'calendar' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
-          >
-            <CalendarIcon size={14} /> Calendrier
-          </button>
-          <button 
-            onClick={() => setActiveTab('config')}
-            className={`px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'config' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
-          >
-            <Settings size={14} /> Configuration
-          </button>
-          <button 
-            onClick={() => setActiveTab('logs')}
-            className={`px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'logs' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
-          >
-            <History size={14} /> Historique global
-          </button>
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+        <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-10 bg-[radial-gradient(circle_at_top_right,var(--color-indigo-400),transparent_50%)] pointer-events-none" />
+        <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-indigo-400 text-xs font-black uppercase tracking-widest mb-1.5">
+              <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+              Logistique & Livraisons
+            </div>
+            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white flex items-center gap-2">
+              <CalendarIcon className="text-indigo-400" size={28} /> Agenda des Livraisons
+            </h1>
+            <p className="text-slate-300 text-xs md:text-sm mt-1.5 font-medium max-w-xl leading-relaxed">
+              Gérez la préparation des véhicules facturés, programmez les rendez-vous et générez les décharges.
+            </p>
+          </div>
+          
+          {/* Tab Controls */}
+          <div className="flex bg-white/10 backdrop-blur-md p-1.5 rounded-xl border border-white/10 shrink-0">
+            <button 
+              onClick={() => setActiveTab('calendar')}
+              className={`px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'calendar' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white'}`}
+            >
+              <CalendarIcon size={14} /> Calendrier
+            </button>
+            <button 
+              onClick={() => setActiveTab('config')}
+              className={`px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'config' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white'}`}
+            >
+              <Settings size={14} /> Configuration
+            </button>
+            <button 
+              onClick={() => setActiveTab('logs')}
+              className={`px-4 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'logs' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white'}`}
+            >
+              <History size={14} /> Historique global
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="p-6 w-full max-w-[1600px] mx-auto">
+      <div className="w-full">
         {/* ==================== TAB: CALENDAR ==================== */}
         {activeTab === 'calendar' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             
             {/* Left Column: Vehicles to Program */}
-            <div className="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 flex flex-col h-[calc(100vh-220px)] min-h-[450px]">
-              <div className="mb-4 text-slate-800">
-                <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
-                  Véhicules à planifier ({pendingPlanificationSales.length})
-                </h3>
-                <p className="text-xs text-slate-400 mt-1">Dossiers d'achat déjà facturés sans date de sortie programmée.</p>
-              </div>
+            {showPendingSidebar && (
+              <div className="lg:col-span-3 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 flex flex-col h-[calc(100vh-220px)] min-h-[450px]">
+                <div className="mb-4 text-slate-800">
+                  <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                    Véhicules à planifier ({pendingPlanificationSales.length})
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">Dossiers d'achat déjà facturés sans date de sortie programmée.</p>
+                </div>
 
-              {/* Search input to filter vehicles to schedule */}
-              <div className="relative mb-4">
-                <Search className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400 h-full pointer-events-none" size={14} />
-                <input 
-                  type="text"
-                  placeholder="Rechercher par client, modèle, VIN, BDC..."
-                  value={searchQueryToPlan}
-                  onChange={(e) => setSearchQueryToPlan(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white text-slate-800 placeholder-slate-400 transition-all"
-                />
-                {searchQueryToPlan && (
-                  <button 
-                    onClick={() => setSearchQueryToPlan('')} 
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-
-              {/* Scrollable list of pending vehicles */}
-              <div className="space-y-3 overflow-y-auto flex-1 pr-1">
-                {pendingPlanificationSales.length === 0 ? (
-                  <div className="text-center py-12 text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
-                    <CheckCircle2 className="mx-auto mb-3 text-slate-200" size={32} />
-                    <p className="text-xs font-bold uppercase tracking-wider">Tout est planifié !</p>
-                    <p className="text-[10px] text-slate-400 mt-1 px-4">Aucun véhicule facturé en attente de programmation.</p>
-                  </div>
-                ) : (
-                  pendingPlanificationSales.map(sale => (
-                    <div 
-                      key={sale.id} 
-                      draggable="true"
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData("text/plain", sale.id);
-                      }}
-                      onClick={() => setViewingVehicleSale(sale)}
-                      className="bg-slate-50 hover:bg-blue-50/40 border border-slate-200/50 hover:border-blue-300 p-4 rounded-xl transition-all space-y-3 shadow-inner cursor-grab active:cursor-grabbing hover:shadow-md group/card"
-                      title="Glisser vers une date du calendrier ou cliquer pour voir les détails"
+                {/* Search input to filter vehicles to schedule */}
+                <div className="relative mb-4">
+                  <Search className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400 h-full pointer-events-none" size={14} />
+                  <input 
+                    type="text"
+                    placeholder="Rechercher par client, modèle, VIN, BDC..."
+                    value={searchQueryToPlan}
+                    onChange={(e) => setSearchQueryToPlan(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white text-slate-800 placeholder-slate-400 transition-all"
+                  />
+                  {searchQueryToPlan && (
+                    <button 
+                      onClick={() => setSearchQueryToPlan('')} 
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
                     >
-                      <div className="flex justify-between items-start">
-                        <div className="min-w-0">
-                          <span className="bg-amber-100 text-amber-800 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-amber-200">Facturé</span>
-                          <h4 className="font-extrabold text-slate-800 text-sm mt-1.5 truncate group-hover/card:text-blue-900 transition-colors">{sale.marque} {sale.modele}</h4>
-                          <p className="text-xs text-slate-500 truncate">Client: {sale.clientName}</p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <span className="text-[10px] font-bold font-mono text-slate-400">BDC {sale.bdcNumber}</span>
-                        </div>
-                      </div>
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
 
-                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/50">
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            copyBookingLink(sale.id);
-                          }}
-                          className="text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-200 font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white transition-colors flex items-center gap-1 cursor-pointer"
-                          title="Copier le lien public de réservation client"
-                        >
-                          <ClipboardCopy size={13} /> Lien client
-                        </button>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIsPlanningSale(sale);
-                            setPlanningSlot(config.slots[0] || '');
-                          }}
-                          className="text-xs bg-slate-900 hover:bg-slate-800 text-white font-black px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                        >
-                          Placer <ArrowRight size={13} />
-                        </button>
-                      </div>
+                {/* Scrollable list of pending vehicles */}
+                <div className="space-y-3 overflow-y-auto flex-1 pr-1">
+                  {pendingPlanificationSales.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
+                      <CheckCircle2 className="mx-auto mb-3 text-slate-200" size={32} />
+                      <p className="text-xs font-bold uppercase tracking-wider">Tout est planifié !</p>
+                      <p className="text-[10px] text-slate-400 mt-1 px-4">Aucun véhicule facturé en attente de programmation.</p>
                     </div>
-                  ))
-                )}
+                  ) : (
+                    pendingPlanificationSales.map(sale => (
+                      <div 
+                        key={sale.id} 
+                        draggable="true"
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("text/plain", sale.id);
+                        }}
+                        onClick={() => setViewingVehicleSale(sale)}
+                        className="bg-slate-50 hover:bg-blue-50/40 border border-slate-200/50 hover:border-blue-300 p-4 rounded-xl transition-all space-y-3 shadow-inner cursor-grab active:cursor-grabbing hover:shadow-md group/card"
+                        title="Glisser vers une date du calendrier ou cliquer pour voir les détails"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="min-w-0">
+                            <span className="bg-amber-100 text-amber-800 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-amber-200">Facturé</span>
+                            <h4 className="font-extrabold text-slate-800 text-sm mt-1.5 truncate group-hover/card:text-blue-900 transition-colors">{sale.marque} {sale.modele}</h4>
+                            <p className="text-xs text-slate-500 truncate">Client: {sale.clientName}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className="text-[10px] font-bold font-mono text-slate-400">BDC {sale.bdcNumber}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/50">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copyBookingLink(sale.id);
+                            }}
+                            className="text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-200 font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white transition-colors flex items-center gap-1 cursor-pointer"
+                            title="Copier le lien public de réservation client"
+                          >
+                            <ClipboardCopy size={13} /> Lien client
+                          </button>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsPlanningSale(sale);
+                              setPlanningSlot(config.slots[0] || '');
+                            }}
+                            className="text-xs bg-slate-900 hover:bg-slate-800 text-white font-black px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            Placer <ArrowRight size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Right Column: Calendar Grid */}
-            <div className="lg:col-span-8 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5">
+            <div className={`${showPendingSidebar ? 'lg:col-span-9' : 'lg:col-span-12'} bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5`}>
               {/* Calendar Grid Controller */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-slate-100">
                 <div className="flex items-center gap-2">
@@ -886,6 +657,15 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-3">
+                  {/* Collapse/Expand Sidebar Toggle */}
+                  <button 
+                    onClick={() => setShowPendingSidebar(!showPendingSidebar)} 
+                    className="p-2.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-blue-600 hover:border-blue-200 rounded-xl transition-all cursor-pointer flex items-center justify-center relative group shadow-sm"
+                    title={showPendingSidebar ? "Plein écran (Masquer les dossiers)" : "Afficher les dossiers à planifier"}
+                  >
+                    {showPendingSidebar ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+                  </button>
+
                   <button 
                     onClick={handleTodayClick} 
                     className="text-xs font-bold uppercase tracking-wider px-3.5 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-slate-700 transition-colors cursor-pointer"

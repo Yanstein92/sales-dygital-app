@@ -10,13 +10,14 @@ interface Props {
 }
 
 export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => {
-  const { userProfile, setUserProfile, userAuth } = useApp();
+  const { userProfile, setUserProfile, userAuth, teamMembers } = useApp();
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newSiret, setNewSiret] = useState('');
   const [newAddress, setNewAddress] = useState('');
   const [newLogoUrl, setNewLogoUrl] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
+  const [newIsSubsidiary, setNewIsSubsidiary] = useState(true);
 
   // Editing state
   const [editingCompany, setEditingCompany] = useState<string | null>(null); // name of company being edited
@@ -26,6 +27,7 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
+  const [editIsSubsidiary, setEditIsSubsidiary] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -85,7 +87,8 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
         address: newAddress.trim(),
         logoUrl: newLogoUrl,
         email: newEmail.trim(),
-        phone: newPhone.trim()
+        phone: newPhone.trim(),
+        isSubsidiary: newIsSubsidiary
       };
 
       const updatedDetails = [...companiesDetails.filter(c => c.name.toUpperCase() !== trimmed), newDetail];
@@ -106,6 +109,7 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
       setNewLogoUrl('');
       setNewEmail('');
       setNewPhone('');
+      setNewIsSubsidiary(true);
       onShowToast(`Entreprise "${trimmed}" créée avec succès.`, "success");
     } catch (err) {
       onShowToast("Erreur lors de la création de l'entreprise.", "error");
@@ -121,6 +125,7 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
     setEditLogoUrl(detail.logoUrl || '');
     setEditEmail(detail.email || '');
     setEditPhone(detail.phone || '');
+    setEditIsSubsidiary(detail.isSubsidiary ?? true);
   };
 
   const handleSaveEdit = async () => {
@@ -131,15 +136,16 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
     try {
       let updatedSubCompanies = [...subCompanies];
       let updatedMainCompany = mainCompany;
+      let isMainCompanyRenamed = false;
 
       // If name changed
       if (editingCompany.toUpperCase() !== trimmedName) {
         if (editingCompany.toUpperCase() === mainCompany.toUpperCase()) {
-          onShowToast("Pour renommer l'entreprise principale, veuillez utiliser le raccourci dans l'en-tête.", "error");
-          return;
+          updatedMainCompany = trimmedName;
+          isMainCompanyRenamed = true;
         } else {
           // It's a sub company
-          if (subCompanies.map(c => c.toUpperCase()).includes(trimmedName)) {
+          if (subCompanies.map(c => c.toUpperCase()).includes(trimmedName) || mainCompany.toUpperCase() === trimmedName) {
             onShowToast("Ce nom d'entreprise est déjà utilisé.", "error");
             return;
           }
@@ -157,7 +163,8 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
         address: editAddress.trim(),
         logoUrl: editLogoUrl,
         email: editEmail.trim(),
-        phone: editPhone.trim()
+        phone: editPhone.trim(),
+        isSubsidiary: editIsSubsidiary
       };
 
       // Filter out both the old and new names to avoid duplicates, then add the new details
@@ -172,10 +179,37 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
         companiesDetails: updatedDetails
       };
 
+      if (isMainCompanyRenamed) {
+        updatedProfile.companyId = updatedMainCompany;
+        const promises = teamMembers.flatMap(member => [
+          fetch(`/api/users/${member.uid}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId: updatedMainCompany })
+          }),
+          setDoc(doc(db, getUserDocPath(member.uid)), { companyId: updatedMainCompany }, { merge: true })
+        ]);
+        
+        if (userAuth?.uid) {
+          promises.push(
+            fetch(`/api/users/${userAuth.uid}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ companyId: updatedMainCompany })
+            })
+          );
+        }
+        await Promise.all(promises);
+      }
+
       await setDoc(doc(db, getUserDocPath(userAuth.uid)), updatedProfile, { merge: true });
       setUserProfile(updatedProfile);
       setEditingCompany(null);
       onShowToast("Informations de l'entreprise mises à jour.", "success");
+      
+      if (isMainCompanyRenamed) {
+        setTimeout(() => window.location.reload(), 800);
+      }
     } catch (err) {
       onShowToast("Erreur lors de la sauvegarde.", "error");
     }
@@ -208,25 +242,29 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 animate-fade-in-up my-8">
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-700 to-indigo-800 px-6 py-5 text-white flex justify-between items-center shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="bg-white/15 p-2.5 rounded-lg">
-              <Building size={24} className="text-blue-100" />
+        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 px-6 py-6 md:px-8 md:py-8 text-white relative overflow-hidden">
+          <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-10 bg-[radial-gradient(circle_at_top_right,var(--color-indigo-400),transparent_50%)] pointer-events-none" />
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+            <div className="flex items-center gap-4">
+            <div className="bg-white/10 p-2.5 rounded-lg border border-white/10 shadow-sm">
+              <Building size={24} className="text-indigo-400" />
             </div>
             <div>
-              <h3 className="text-xl font-black tracking-tight leading-none mb-1 font-sans">Gestion des Entreprises</h3>
-              <p className="text-xs text-blue-100/80 font-medium">Configurez l'identité, SIRET, adresses et logos de vos filiales</p>
+              <h3 className="text-xl font-black tracking-tight leading-none mb-1 font-sans text-white">Gestion des Entreprises</h3>
+              <p className="text-xs text-slate-300 font-medium">Configurez l'identité, SIRET, adresses et logos de vos entités</p>
             </div>
+            </div>
+            <button onClick={onClose} className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors cursor-pointer relative z-10 text-white font-bold text-sm">
+              <X size={16} />
+              <span>Fermer</span>
+            </button>
           </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors cursor-pointer">
-            <X size={20} />
-          </button>
         </div>
 
-        <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+        <div className="p-6 md:p-8 space-y-8">
           {/* List of Companies */}
           <div className="space-y-4">
             <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Vos Entreprises ({totalCompaniesCount}/2)</p>
@@ -251,9 +289,9 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <h4 className="text-base font-black text-slate-800 tracking-tight truncate">{companyName}</h4>
                         <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
-                          isMain ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                          isMain ? 'bg-blue-100 text-blue-800' : (detail.isSubsidiary !== false ? 'bg-purple-100 text-purple-800' : 'bg-emerald-100 text-emerald-800')
                         }`}>
-                          {isMain ? 'Principal' : 'Filiale'}
+                          {isMain ? 'Principal' : (detail.isSubsidiary !== false ? 'Filiale' : 'Entreprise Séparée')}
                         </span>
                       </div>
                       
@@ -353,6 +391,21 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
                     />
                   </div>
                 </div>
+
+                {editingCompany.toUpperCase() !== mainCompany.toUpperCase() && (
+                  <div className="md:col-span-2 flex items-center gap-2 bg-indigo-50 border border-indigo-100 p-3 rounded-lg">
+                    <input
+                      type="checkbox"
+                      id="editIsSubsidiary"
+                      checked={editIsSubsidiary}
+                      onChange={(e) => setEditIsSubsidiary(e.target.checked)}
+                      className="w-4 h-4 text-indigo-600 border-indigo-300 rounded focus:ring-indigo-500"
+                    />
+                    <label htmlFor="editIsSubsidiary" className="text-sm font-bold text-indigo-900 cursor-pointer">
+                      Il s'agit d'une filiale (Non cochée = Entreprise à part entière)
+                    </label>
+                  </div>
+                )}
 
                 {editingCompany.toUpperCase() !== mainCompany.toUpperCase() && (
                   <div className="md:col-span-2">
@@ -455,8 +508,21 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
               </div>
             ) : (
               <form onSubmit={handleAddCompany} className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4">
-                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Ajouter une filiale</h4>
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Ajouter une entreprise secondaire</h4>
                 
+                <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 p-3 rounded-lg">
+                  <input
+                    type="checkbox"
+                    id="newIsSubsidiary"
+                    checked={newIsSubsidiary}
+                    onChange={(e) => setNewIsSubsidiary(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 border-indigo-300 rounded focus:ring-indigo-500"
+                  />
+                  <label htmlFor="newIsSubsidiary" className="text-sm font-bold text-indigo-900 cursor-pointer">
+                    Il s'agit d'une filiale (Non cochée = Entreprise à part entière)
+                  </label>
+                </div>
+
                 {/* Logo input */}
                 <div className="flex items-center gap-4 bg-white border border-slate-200 p-4 rounded-xl">
                   <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-center overflow-hidden shrink-0 shadow-sm">
@@ -557,7 +623,7 @@ export const CompanyManagement: React.FC<Props> = ({ onClose, onShowToast }) => 
                     className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition-all shadow-sm hover:shadow cursor-pointer"
                   >
                     <Plus size={16} />
-                    <span>Créer la filiale</span>
+                    <span>Ajouter l'entreprise</span>
                   </button>
                 </div>
               </form>
