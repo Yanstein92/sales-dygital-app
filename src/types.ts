@@ -34,11 +34,16 @@ export interface Sale {
   vin: string;
   plaque: string;
   mec?: string;
+  kms?: number;
+  garantie?: string;
+  energie?: string;
   price: number;
   transport?: number;
   date: string;
   commercial: string;
   ref: string;
+  refPhone?: string;
+  refEmail?: string;
   notes?: Note[];
   welcomeEmailSent?: boolean;
   
@@ -175,4 +180,26 @@ export interface Vehicle {
 
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface ClientDocument {
+  id: string;
+  name: string;
+  type: 'carte_identite' | 'passeport' | 'permis_conduire';
+  fileSize?: string;
+  dataUrl?: string;
+  uploadedAt: string;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  address?: string;
+  zipCode?: string;
+  city?: string;
+  notes?: string;
+  documents?: ClientDocument[];
+  createdAt?: string;
 }

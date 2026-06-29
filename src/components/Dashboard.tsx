@@ -3,7 +3,7 @@ import {
   User, Building2, Banknote, Search, UploadCloud, Plus, X, 
   ArrowUpDown, ChevronUp, ChevronDown, Clock, CheckCircle2, 
   Car, MessageCircle, Mail, Hash, CreditCard, ChevronRight,
-  RotateCcw, Plane, MapPin, Store
+  RotateCcw, Plane, MapPin, Store, LayoutGrid, List
 } from 'lucide-react';
 import { db, doc, setDoc, getDoc, getUserPath, getUserDocPath } from '../lib/firebase';
 import { useApp } from '../lib/context';
@@ -30,6 +30,7 @@ export const Dashboard: React.FC<{
   const searchQuery = propSearchQuery !== undefined ? propSearchQuery : localSearchQuery;
   const setSearchQuery = propSetSearchQuery !== undefined ? propSetSearchQuery : setLocalSearchQuery;
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [isDragging, setIsDragging] = useState(false);
 
   const [latePaymentDays, setLatePaymentDays] = useState<number>(5);
@@ -125,7 +126,7 @@ export const Dashboard: React.FC<{
       const clientMatch = String(s.clientName || '').toLowerCase().includes(q);
       const vinMatch = String(s.vin || '').toLowerCase().includes(q);
       const plaqueMatch = String(s.plaque || '').toLowerCase().includes(q);
-      const refMatch = String(s.ref || '').toLowerCase().includes(q);
+      const refMatch = String(s.ref || '').toLowerCase().includes(q) || String(s.refPhone || '').toLowerCase().includes(q) || String(s.refEmail || '').toLowerCase().includes(q);
       const bdcMatch = String(s.bdcNumber || '').toLowerCase().includes(q);
       const marqueMatch = String(s.marque || '').toLowerCase().includes(q);
       const modeleMatch = String(s.modele || '').toLowerCase().includes(q);
@@ -352,6 +353,24 @@ export const Dashboard: React.FC<{
             )}
 
             <div className="flex items-center gap-2 w-full lg:w-auto flex-wrap lg:flex-nowrap lg:ml-auto">
+              {/* Toggle view mode */}
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/60 mr-1 shadow-xs">
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-1.5 rounded-lg transition-all cursor-pointer ${viewMode === 'list' ? 'bg-white text-indigo-600 shadow-xs border border-slate-200/40 font-bold' : 'text-slate-400 hover:text-slate-600'}`}
+                  title="Afficher en liste"
+                >
+                  <List size={16} />
+                </button>
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`p-1.5 rounded-lg transition-all cursor-pointer ${viewMode === 'grid' ? 'bg-white text-indigo-600 shadow-xs border border-slate-200/40 font-bold' : 'text-slate-400 hover:text-slate-600'}`}
+                  title="Afficher en cartes"
+                >
+                  <LayoutGrid size={16} />
+                </button>
+              </div>
+
               <input type="file" accept=".pdf" className="hidden" ref={pdfInputRef} onChange={(e) => e.target.files && handleAddSaleCheck(() => onProcessPdf(e.target.files![0]))} />
               <button onClick={() => handleAddSaleCheck(() => pdfInputRef.current?.click())} className={`flex flex-none items-center justify-center p-2.5 rounded-xl transition-all shadow-sm transform hover:-translate-y-0.5 border bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50`} title="Scanner un PDF">
                 <UploadCloud size={20} />
@@ -365,175 +384,319 @@ export const Dashboard: React.FC<{
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600 min-w-[1000px]">
-             <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 uppercase text-[11px] font-black tracking-wider">
-              <tr>
-                <th className="px-5 py-4 cursor-pointer hover:bg-slate-100 transition-colors group select-none" onClick={() => handleSort('bdcNumber')}>
-                  <div className="flex items-center gap-2">N° BDC <SortIcon columnKey="bdcNumber" /></div>
-                </th>
-                <th className="px-5 py-4 cursor-pointer hover:bg-slate-100 transition-colors group select-none" onClick={() => handleSort('client')}>
-                  <div className="flex items-center gap-2">Client & Contact <SortIcon columnKey="client" /></div>
-                </th>
-                <th className="px-5 py-4 cursor-pointer hover:bg-slate-100 transition-colors group select-none" onClick={() => handleSort('vehicule')}>
-                  <div className="flex items-center gap-2">Véhicule & Infos <SortIcon columnKey="vehicule" /></div>
-                </th>
-                <th className="px-5 py-4 text-center cursor-pointer hover:bg-slate-100 transition-colors group select-none" onClick={() => handleSort('date')}>
-                  <div className="flex items-center justify-center gap-2">Date & Délai <SortIcon columnKey="date" /></div>
-                </th>
-                <th className="px-5 py-4 text-right cursor-pointer hover:bg-slate-100 transition-colors group select-none" onClick={() => handleSort('reste')}>
-                  <div className="flex items-center justify-end gap-2"><SortIcon columnKey="reste" /> Reste à payer</div>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {finalProcessedSales.map((sale) => {
-                const remaining = calculateRemaining(sale.id);
-                const isPaid = remaining <= 0;
-                const isRefunded = sale.factureStatus === 'rembourse';
-                const isSettled = isPaid || isRefunded;
-                const daysDiff = getDaysInfo(sale.date);
-                const isOverdue = !isPaid && daysDiff < 0;
-                
-                // Color based on status
-                let rowClass = 'hover:bg-slate-50';
-                if (isRefunded) {
-                   rowClass = 'bg-slate-100/40 opacity-55 text-slate-400 select-none';
-                } else if (sale.releaseStatus === 'sorti' || sale.releaseStatus === 'sorti_tpd') {
-                   rowClass = 'bg-slate-50 opacity-80 hover:opacity-100';
-                } else if (isOverdue) {
-                   rowClass = 'bg-red-50 hover:bg-red-100';
-                }
+      {viewMode === 'grid' ? (
+        /* GRID VIEW OF DOSSIERS */
+        finalProcessedSales.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-16 text-center shadow-sm">
+            <div className="text-slate-400 mb-2"><Search size={40} className="mx-auto opacity-50" /></div>
+            <p className="text-slate-500 font-bold text-lg">Aucun dossier trouvé.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {finalProcessedSales.map((sale) => {
+              const remaining = calculateRemaining(sale.id);
+              const isPaid = remaining <= 0;
+              const isRefunded = sale.factureStatus === 'rembourse';
+              const daysDiff = getDaysInfo(sale.date);
+              const isOverdue = !isPaid && daysDiff < 0;
 
-                return (
-                  <tr 
-                    key={sale.id} 
-                    onClick={() => onSelectSale(sale.id)} 
-                    className={`${rowClass} transition-colors cursor-pointer hover:shadow-inner group/row`}
-                  >
-                    <td className="px-5 py-4 align-top w-28 text-left">
-                      <div className={`text-[11px] uppercase font-black tracking-wider ${sale.company === 'KDB AUTO' ? 'text-red-600' : 'text-indigo-600'}`}>
+              return (
+                <div
+                  key={sale.id}
+                  onClick={() => onSelectSale(sale.id)}
+                  className="bg-white rounded-2xl border border-slate-200 hover:border-indigo-150 p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group relative overflow-hidden"
+                >
+                  <div className="absolute right-0 top-0 w-1 bg-transparent group-hover:bg-indigo-500 h-full transition-all" />
+
+                  <div>
+                    {/* Header line: Company name + BDC Number */}
+                    <div className="flex justify-between items-center mb-3">
+                      <span className={`text-[9px] uppercase font-black tracking-wider px-2 py-0.5 rounded ${
+                        sale.company === 'KDB AUTO' ? 'text-red-600 bg-red-50 border border-red-100/30' : 'text-indigo-600 bg-indigo-50 border border-indigo-100/30'
+                      }`}>
                         {sale.company}
-                      </div>
-                      <div className="font-mono text-xs font-bold text-slate-500 mt-1">
+                      </span>
+                      <span className="font-mono text-xs font-bold text-slate-400">
                         #{sale.bdcNumber}
-                      </div>
-                      {sale.saleMode && (
-                        <div className="mt-2 flex items-center gap-1.5 text-[10px] font-black tracking-wider uppercase text-slate-400">
-                          {sale.saleMode === 'export' && <><Plane size={11} className="text-blue-500" /> <span className="text-blue-600/80">Export</span></>}
-                          {sale.saleMode === 'locale' && <><MapPin size={11} className="text-emerald-500" /> <span className="text-emerald-600/80">Locale</span></>}
-                          {sale.saleMode === 'marchand' && <><Store size={11} className="text-purple-500" /> <span className="text-purple-600/80">Marchand</span></>}
+                      </span>
+                    </div>
+
+                    {/* Client Name & Reference */}
+                    <div className="mb-3">
+                      <h3 className="font-black text-slate-800 text-base group-hover:text-indigo-600 transition-colors leading-tight truncate flex items-center gap-1.5">
+                        <span className={isRefunded ? 'line-through text-slate-400' : ''}>{sale.clientName}</span>
+                        {sale.notes && sale.notes.length > 0 && (
+                          <span className="bg-amber-400 text-amber-900 text-[9px] font-black w-4.5 h-4.5 flex items-center justify-center rounded-full shadow-xs shrink-0">
+                            {sale.notes.length}
+                          </span>
+                        )}
+                      </h3>
+                      {sale.ref && (
+                        <div className="text-[10px] font-bold text-slate-500 mt-1 flex flex-wrap items-center gap-1">
+                          <span className="flex items-center"><Hash size={9} className="mr-0.5 text-indigo-500" /> Réf: {sale.ref}</span>
                         </div>
                       )}
-                    </td>
-                    <td className="px-5 py-4 align-top w-64">
-                      <div className="font-black text-slate-800 text-base flex items-center relative group">
-                        <span className={isRefunded ? 'line-through text-slate-400' : ''} onClick={(e) => e.stopPropagation()}>{sale.clientName}</span>
-                        {sale.notes && sale.notes.length > 0 && (
-                          <div className="relative ml-2 flex items-center justify-center">
-                            <span className="bg-amber-400 text-amber-900 text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shadow-sm" title={`${sale.notes.length} note(s)`}>
-                              {sale.notes.length}
-                            </span>
-                            {/* NOUVEAU: Hover tooltip pour lire les notes */}
-                            <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-slate-800 text-white text-xs rounded-lg shadow-xl p-3 z-30 pointer-events-none">
-                              <h4 className="font-bold border-b border-slate-600 pb-1 mb-2">Dernières notes</h4>
-                              {sale.notes.map((n, i) => (
-                                <div key={n.id || `note-${i}`} className="mb-2 last:mb-0">
-                                  <span className="text-[10px] text-amber-300 block">{new Date(n.date).toLocaleDateString()}</span>
-                                  <span className="break-words text-white">{n.text}</span>
-                                </div>
-                              ))}
-                              <div className="absolute top-full left-3 w-3 h-3 bg-slate-800 transform rotate-45 -mt-1.5"></div>
-                            </div>
+                    </div>
+
+                    {/* Vehicle Description Box */}
+                    <div className="bg-slate-50/70 border border-slate-100 p-3.5 rounded-xl space-y-2 mb-4">
+                      <div className="font-bold text-sm text-slate-800 leading-tight">
+                        {sale.marque} {sale.modele}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-bold text-slate-700 bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-xs flex items-center gap-1">
+                          <Car size={10} className="text-slate-400"/> {sale.plaque || '-'}
+                        </span>
+                        {sale.color && (
+                          <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-100 px-1.5 py-0.5 rounded">
+                            {sale.color}
+                          </span>
+                        )}
+                        {sale.saleMode && (
+                          <span className="text-[9px] font-black text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded uppercase border border-indigo-100/50">
+                            {sale.saleMode}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[9px] text-slate-400 font-mono break-all font-medium">
+                        VIN: {sale.vin || '-'}
+                      </div>
+                    </div>
+
+                    {/* Tags / Badges */}
+                    <div className="flex items-center gap-1.5 flex-wrap mb-4">
+                      <span className="text-[9px] uppercase font-extrabold px-1.5 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 rounded">
+                        {sale.commercial}
+                      </span>
+                      {sale.factureStatus === 'facture' && (
+                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] uppercase font-bold px-1.5 py-0.5 rounded">
+                          Facturé
+                        </span>
+                      )}
+                      {sale.factureStatus === 'a_rembourser' && (
+                        <span className="bg-amber-50 text-amber-800 border border-amber-100 text-[9px] uppercase font-bold px-1.5 py-0.5 rounded">
+                          À Rembourser
+                        </span>
+                      )}
+                      {sale.factureStatus === 'rembourse' && (
+                        <span className="bg-purple-50 text-purple-800 border border-purple-100 text-[9px] uppercase font-bold px-1.5 py-0.5 rounded">
+                          Remboursé
+                        </span>
+                      )}
+                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${
+                        !sale.releaseStatus || sale.releaseStatus === 'non_sorti' ? 'bg-slate-50 border-slate-200 text-slate-500' : 
+                        sale.releaseStatus === 'programmee' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 
+                        'bg-slate-800 border-slate-900 text-white'
+                      }`}>
+                        {!sale.releaseStatus || sale.releaseStatus === 'non_sorti' ? 'En Parc' : sale.releaseStatus === 'programmee' ? 'Sortie Prog.' : sale.releaseStatus === 'sorti_tpd' ? 'TPD Sorti' : 'Sorti'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Card Footer Details */}
+                  <div className="pt-3.5 border-t border-slate-100 flex items-center justify-between">
+                    <div>
+                      <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Reste à payer</div>
+                      <div className={`text-base font-black ${isPaid ? 'text-emerald-600' : isOverdue ? 'text-red-600' : 'text-amber-600'}`}>
+                        {remaining.toLocaleString()} €
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{new Date(sale.date).toLocaleDateString('fr-FR')}</div>
+                      <div className="text-[10px] font-bold mt-0.5">
+                        {isPaid ? (
+                          <span className="text-emerald-600 flex items-center gap-1 justify-end"><CheckCircle2 size={11}/> Soldé</span>
+                        ) : isOverdue ? (
+                          <span className="text-red-600 flex items-center gap-1 justify-end"><Clock size={10}/> Retard {Math.abs(daysDiff)}j</span>
+                        ) : (
+                          <span className="text-amber-600 flex items-center gap-1 justify-end"><Clock size={10}/> {daysDiff}j rest.</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
+      ) : (
+        /* LIST/TABLE VIEW */
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-600 min-w-[1000px]">
+               <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 uppercase text-[11px] font-black tracking-wider">
+                <tr>
+                  <th className="px-5 py-4 cursor-pointer hover:bg-slate-100 transition-colors group select-none" onClick={() => handleSort('bdcNumber')}>
+                    <div className="flex items-center gap-2">N° BDC <SortIcon columnKey="bdcNumber" /></div>
+                  </th>
+                  <th className="px-5 py-4 cursor-pointer hover:bg-slate-100 transition-colors group select-none" onClick={() => handleSort('client')}>
+                    <div className="flex items-center gap-2">Client & Contact <SortIcon columnKey="client" /></div>
+                  </th>
+                  <th className="px-5 py-4 cursor-pointer hover:bg-slate-100 transition-colors group select-none" onClick={() => handleSort('vehicule')}>
+                    <div className="flex items-center gap-2">Véhicule & Infos <SortIcon columnKey="vehicule" /></div>
+                  </th>
+                  <th className="px-5 py-4 text-center cursor-pointer hover:bg-slate-100 transition-colors group select-none" onClick={() => handleSort('date')}>
+                    <div className="flex items-center justify-center gap-2">Date & Délai <SortIcon columnKey="date" /></div>
+                  </th>
+                  <th className="px-5 py-4 text-right cursor-pointer hover:bg-slate-100 transition-colors group select-none" onClick={() => handleSort('reste')}>
+                    <div className="flex items-center justify-end gap-2"><SortIcon columnKey="reste" /> Reste à payer</div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {finalProcessedSales.map((sale) => {
+                  const remaining = calculateRemaining(sale.id);
+                  const isPaid = remaining <= 0;
+                  const isRefunded = sale.factureStatus === 'rembourse';
+                  const isSettled = isPaid || isRefunded;
+                  const daysDiff = getDaysInfo(sale.date);
+                  const isOverdue = !isPaid && daysDiff < 0;
+                  
+                  // Color based on status
+                  let rowClass = 'hover:bg-slate-50';
+                  if (isRefunded) {
+                     rowClass = 'bg-slate-100/40 opacity-55 text-slate-400 select-none';
+                  } else if (sale.releaseStatus === 'sorti' || sale.releaseStatus === 'sorti_tpd') {
+                     rowClass = 'bg-slate-50 opacity-80 hover:opacity-100';
+                  } else if (isOverdue) {
+                     rowClass = 'bg-red-50 hover:bg-red-100';
+                  }
+
+                  return (
+                    <tr 
+                      key={sale.id} 
+                      onClick={() => onSelectSale(sale.id)} 
+                      className={`${rowClass} transition-colors cursor-pointer hover:shadow-inner group/row`}
+                    >
+                      <td className="px-5 py-4 align-top w-28 text-left">
+                        <div className={`text-[11px] uppercase font-black tracking-wider ${sale.company === 'KDB AUTO' ? 'text-red-600' : 'text-indigo-600'}`}>
+                          {sale.company}
+                        </div>
+                        <div className="font-mono text-xs font-bold text-slate-500 mt-1">
+                          #{sale.bdcNumber}
+                        </div>
+                        {sale.saleMode && (
+                          <div className="mt-2 flex items-center gap-1.5 text-[10px] font-black tracking-wider uppercase text-slate-400">
+                            {sale.saleMode === 'export' && <><Plane size={11} className="text-blue-500" /> <span className="text-blue-600/80">Export</span></>}
+                            {sale.saleMode === 'locale' && <><MapPin size={11} className="text-emerald-500" /> <span className="text-emerald-600/80">Locale</span></>}
+                            {sale.saleMode === 'marchand' && <><Store size={11} className="text-purple-500" /> <span className="text-purple-600/80">Marchand</span></>}
                           </div>
                         )}
-                      </div>
-                      {sale.ref && <div className="text-xs font-bold text-slate-500 mt-0.5 flex items-center" onClick={(e) => e.stopPropagation()}><Hash size={10} className="mr-0.5 text-indigo-500"/> Réf: {sale.ref}</div>}
-                      <div className="flex items-center gap-2 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${sale.commercial === 'À assigner' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600 border border-slate-200 shadow-sm'}`}>
-                          {sale.commercial}
-                        </span>
-                        {sale.factureStatus === 'facture' && (
-                           <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] uppercase font-bold px-2 py-0.5 rounded flex items-center gap-1 shadow-sm">
-                             <CheckCircle2 size={10} /> Facturé
-                           </span>
-                        )}
-                        {sale.factureStatus === 'a_rembourser' && (
-                           <span className="bg-amber-50 border border-amber-200 text-amber-800 text-[10px] uppercase font-bold px-2 py-0.5 rounded flex items-center shadow-sm">
-                             À Rembourser
-                           </span>
-                        )}
-                        {sale.factureStatus === 'rembourse' && (
-                           <span className="bg-purple-50 border border-purple-200 text-purple-800 text-[10px] uppercase font-bold px-2 py-0.5 rounded flex items-center shadow-sm">
-                             Remboursé
-                           </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-5 py-4 align-top w-80">
-                      <div className={`font-bold text-slate-800 text-base ${isRefunded ? 'text-slate-400 font-normal' : ''}`} onClick={(e) => e.stopPropagation()}>{sale.marque} {sale.modele} <span className="text-sm font-medium text-slate-500">({sale.color})</span></div>
-                      <div className="mt-2 flex flex-col gap-1.5 items-start">
-                        <div className="flex flex-wrap gap-1.5 items-center">
-                          <span className="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 flex items-center gap-1 shadow-sm" onClick={(e) => e.stopPropagation()}><Car size={12}/> {sale.plaque || '-'}</span>
-                          {(sale as any).mec && (
-                            <span className="text-[11px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md flex items-center shadow-sm" onClick={(e) => e.stopPropagation()}>
-                              M.E.C : {(sale as any).mec}
-                            </span>
+                      </td>
+                      <td className="px-5 py-4 align-top w-64">
+                        <div className="font-black text-slate-800 text-base flex items-center relative group">
+                          <span className={isRefunded ? 'line-through text-slate-400' : ''} onClick={(e) => e.stopPropagation()}>{sale.clientName}</span>
+                          {sale.notes && sale.notes.length > 0 && (
+                            <div className="relative ml-2 flex items-center justify-center">
+                              <span className="bg-amber-400 text-amber-900 text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shadow-sm" title={`${sale.notes.length} note(s)`}>
+                                {sale.notes.length}
+                              </span>
+                              {/* NOUVEAU: Hover tooltip pour lire les notes */}
+                              <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 bg-slate-800 text-white text-xs rounded-lg shadow-xl p-3 z-30 pointer-events-none">
+                                <h4 className="font-bold border-b border-slate-600 pb-1 mb-2">Dernières notes</h4>
+                                {sale.notes.map((n, i) => (
+                                  <div key={n.id || `note-${i}`} className="mb-2 last:mb-0">
+                                    <span className="text-[10px] text-amber-300 block">{new Date(n.date).toLocaleDateString()}</span>
+                                    <span className="break-words text-white">{n.text}</span>
+                                  </div>
+                                ))}
+                                <div className="absolute top-full left-3 w-3 h-3 bg-slate-800 transform rotate-45 -mt-1.5"></div>
+                              </div>
+                            </div>
                           )}
                         </div>
-                        <div className="flex items-center gap-2">
-                           <span className="text-[11px] text-slate-500 font-mono bg-white px-2 py-0.5 rounded-md border border-slate-200 break-all leading-tight shadow-sm" onClick={(e) => e.stopPropagation()}>
-                             {sale.vin || '-'}
-                           </span>
-                           <div className="relative group/status flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                             <span className={`cursor-pointer inline-flex items-center text-[10px] font-bold uppercase px-2 py-0.5 rounded-md border shadow-sm transition-colors ${
-                               !sale.releaseStatus || sale.releaseStatus === 'non_sorti' ? 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100' : 
-                               sale.releaseStatus === 'programmee' ? 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100' : 
-                               'bg-slate-800 border-slate-900 text-white hover:bg-slate-700'
-                             }`}>
-                               {!sale.releaseStatus || sale.releaseStatus === 'non_sorti' ? 'En Parc' : sale.releaseStatus === 'programmee' ? 'Sortie Prog.' : sale.releaseStatus === 'sorti_tpd' ? 'Sorti TPD' : 'Sorti'}
-                               <ChevronDown size={10} className="ml-1 opacity-50" />
+                        {sale.ref && (
+                          <div className="text-xs font-bold text-slate-500 mt-0.5 flex flex-wrap items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <span className="flex items-center"><Hash size={10} className="mr-0.5 text-indigo-500"/> Réf: {sale.ref}</span>
+                            {sale.refPhone && <span className="text-[10px] text-slate-400 font-medium">📞 {sale.refPhone}</span>}
+                            {sale.refEmail && <span className="text-[10px] text-slate-400 font-medium">✉️ {sale.refEmail}</span>}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                          <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${sale.commercial === 'À assigner' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600 border border-slate-200 shadow-sm'}`}>
+                            {sale.commercial}
+                          </span>
+                          {sale.factureStatus === 'facture' && (
+                             <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] uppercase font-bold px-2 py-0.5 rounded flex items-center gap-1 shadow-sm">
+                               <CheckCircle2 size={10} /> Facturé
                              </span>
-                             <div className="absolute top-full left-0 mt-1 hidden group-hover/status:flex flex-col bg-white border border-slate-200 rounded-lg shadow-xl z-20 w-28 p-1" onClick={(e) => e.stopPropagation()}>
-                                <button onClick={() => handleUpdateReleaseStatus(sale.id, 'non_sorti')} className="text-left px-2 py-1.5 text-[10px] font-bold uppercase text-slate-500 hover:bg-slate-50 hover:text-slate-900 rounded-md transition-colors">En Parc</button>
-                                <button onClick={() => handleUpdateReleaseStatus(sale.id, 'programmee')} className="text-left px-2 py-1.5 text-[10px] font-bold uppercase text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors">Sortie Prog.</button>
-                                <button onClick={() => handleUpdateReleaseStatus(sale.id, 'sorti')} className="text-left px-2 py-1.5 text-[10px] font-bold uppercase text-slate-900 hover:bg-slate-100 rounded-md transition-colors">Sorti</button>
-                                <button onClick={() => handleUpdateReleaseStatus(sale.id, 'sorti_tpd')} className="text-left px-2 py-1.5 text-[10px] font-bold uppercase text-slate-900 hover:bg-slate-100 rounded-md transition-colors">Sorti TPD</button>
+                          )}
+                          {sale.factureStatus === 'a_rembourser' && (
+                             <span className="bg-amber-50 border border-amber-200 text-amber-800 text-[10px] uppercase font-bold px-2 py-0.5 rounded flex items-center shadow-sm">
+                               À Rembourser
+                             </span>
+                          )}
+                          {sale.factureStatus === 'rembourse' && (
+                             <span className="bg-purple-50 border border-purple-200 text-purple-800 text-[10px] uppercase font-bold px-2 py-0.5 rounded flex items-center shadow-sm">
+                               Remboursé
+                             </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 align-top w-80">
+                        <div className={`font-bold text-slate-800 text-base ${isRefunded ? 'text-slate-400 font-normal' : ''}`} onClick={(e) => e.stopPropagation()}>{sale.marque} {sale.modele} <span className="text-sm font-medium text-slate-500">({sale.color})</span></div>
+                        <div className="mt-2 flex flex-col gap-1.5 items-start">
+                          <div className="flex flex-wrap gap-1.5 items-center">
+                            <span className="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 flex items-center gap-1 shadow-sm" onClick={(e) => e.stopPropagation()}><Car size={12}/> {sale.plaque || '-'}</span>
+                            {(sale as any).mec && (
+                              <span className="text-[11px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md flex items-center shadow-sm" onClick={(e) => e.stopPropagation()}>
+                                M.E.C : {(sale as any).mec}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                             <span className="text-[11px] text-slate-500 font-mono bg-white px-2 py-0.5 rounded-md border border-slate-200 break-all leading-tight shadow-sm" onClick={(e) => e.stopPropagation()}>
+                               {sale.vin || '-'}
+                             </span>
+                             <div className="relative group/status flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                               <span className={`cursor-pointer inline-flex items-center text-[10px] font-bold uppercase px-2 py-0.5 rounded-md border shadow-sm transition-colors ${
+                                 !sale.releaseStatus || sale.releaseStatus === 'non_sorti' ? 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100' : 
+                                 sale.releaseStatus === 'programmee' ? 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100' : 
+                                 'bg-slate-800 border-slate-900 text-white hover:bg-slate-700'
+                               }`}>
+                                 {!sale.releaseStatus || sale.releaseStatus === 'non_sorti' ? 'En Parc' : sale.releaseStatus === 'programmee' ? 'Sortie Prog.' : sale.releaseStatus === 'sorti_tpd' ? 'Sorti TPD' : 'Sorti'}
+                                 <ChevronDown size={10} className="ml-1 opacity-50" />
+                               </span>
+                               <div className="absolute top-full left-0 mt-1 hidden group-hover/status:flex flex-col bg-white border border-slate-200 rounded-lg shadow-xl z-20 w-28 p-1" onClick={(e) => e.stopPropagation()}>
+                                  <button onClick={() => handleUpdateReleaseStatus(sale.id, 'non_sorti')} className="text-left px-2 py-1.5 text-[10px] font-bold uppercase text-slate-500 hover:bg-slate-50 hover:text-slate-900 rounded-md transition-colors">En Parc</button>
+                                  <button onClick={() => handleUpdateReleaseStatus(sale.id, 'programmee')} className="text-left px-2 py-1.5 text-[10px] font-bold uppercase text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors">Sortie Prog.</button>
+                                  <button onClick={() => handleUpdateReleaseStatus(sale.id, 'sorti')} className="text-left px-2 py-1.5 text-[10px] font-bold uppercase text-slate-900 hover:bg-slate-100 rounded-md transition-colors">Sorti</button>
+                                  <button onClick={() => handleUpdateReleaseStatus(sale.id, 'sorti_tpd')} className="text-left px-2 py-1.5 text-[10px] font-bold uppercase text-slate-900 hover:bg-slate-100 rounded-md transition-colors">Sorti TPD</button>
+                               </div>
                              </div>
-                           </div>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-4 text-center align-top w-32">
-                        <div className="font-black text-slate-700 mb-2">{new Date(sale.date).toLocaleDateString('fr-FR')}</div>
-                        <div className="flex justify-center">
-                          {isPaid ? <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1"><CheckCircle2 size={14} className="text-emerald-500"/> Soldé</span> : isOverdue ? <span className="text-[11px] font-black text-red-600 flex items-center gap-1"><Clock size={12}/> Retard {Math.abs(daysDiff)}j</span> : <span className="text-[11px] font-bold text-amber-600 flex items-center gap-1"><Clock size={12}/> {daysDiff} jour(s) rest.</span>}
+                      </td>
+                      <td className="px-5 py-4 text-center align-top w-32">
+                          <div className="font-black text-slate-700 mb-2">{new Date(sale.date).toLocaleDateString('fr-FR')}</div>
+                          <div className="flex justify-center">
+                            {isPaid ? <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1"><CheckCircle2 size={14} className="text-emerald-500"/> Soldé</span> : isOverdue ? <span className="text-[11px] font-black text-red-600 flex items-center gap-1"><Clock size={12}/> Retard {Math.abs(daysDiff)}j</span> : <span className="text-[11px] font-bold text-amber-600 flex items-center gap-1"><Clock size={12}/> {daysDiff} jour(s) rest.</span>}
+                          </div>
+                      </td>
+                      <td className="px-5 py-4 text-right align-top w-44">
+                        <div className="flex items-center justify-end gap-3">
+                          <span className={`px-4 py-2 rounded-xl text-sm font-black shadow-sm inline-block min-w-[100px] text-center whitespace-nowrap border ${isPaid ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : isOverdue ? 'bg-red-500 border-red-600 text-white shadow-md shadow-red-500/20' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>{remaining.toLocaleString()} €</span>
+                          <div className="text-slate-400 group-hover/row:text-indigo-600 group-hover/row:translate-x-1 transition-all duration-200">
+                            <ChevronRight size={20} />
+                          </div>
                         </div>
-                    </td>
-                    <td className="px-5 py-4 text-right align-top w-44">
-                      <div className="flex items-center justify-end gap-3">
-                        <span className={`px-4 py-2 rounded-xl text-sm font-black shadow-sm inline-block min-w-[100px] text-center whitespace-nowrap border ${isPaid ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : isOverdue ? 'bg-red-500 border-red-600 text-white shadow-md shadow-red-500/20' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>{remaining.toLocaleString()} €</span>
-                        <div className="text-slate-400 group-hover/row:text-indigo-600 group-hover/row:translate-x-1 transition-all duration-200">
-                          <ChevronRight size={20} />
-                        </div>
-                      </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {finalProcessedSales.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="text-center py-16 cursor-default">
+                      <div className="text-slate-400 mb-2"><Search size={40} className="mx-auto opacity-50" /></div>
+                      <p className="text-slate-500 font-bold text-lg">Aucun dossier trouvé.</p>
                     </td>
                   </tr>
-                );
-              })}
-              {finalProcessedSales.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="text-center py-16 cursor-default">
-                    <div className="text-slate-400 mb-2"><Search size={40} className="mx-auto opacity-50" /></div>
-                    <p className="text-slate-500 font-bold text-lg">Aucun dossier trouvé.</p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

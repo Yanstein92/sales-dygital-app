@@ -485,7 +485,19 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
   const triggerPrintDischarge = async () => {
     if (!isGeneratingDischarge) return;
     try {
-      await generateDeliveryPDF(isGeneratingDischarge, dischargeForm as any, userProfile, config);
+      // Fetch dynamic templates config if exists to apply custom settings
+      let pdfConfig: any = { ...config };
+      try {
+        const pdfConfigDocRef = doc(db, getUserDocPath(databaseUid) + '/settings/pdf_templates_config');
+        const pdfConfigSnap = await getDoc(pdfConfigDocRef);
+        if (pdfConfigSnap.exists()) {
+          pdfConfig = { ...pdfConfig, ...pdfConfigSnap.data() };
+        }
+      } catch (err) {
+        console.warn("Failed to load custom PDF templates config, using delivery settings fallback:", err);
+      }
+
+      await generateDeliveryPDF(isGeneratingDischarge, dischargeForm as any, userProfile, pdfConfig);
       onShowToast("Décharge de livraison PDF générée !", "success");
       setIsGeneratingDischarge(null);
     } catch (e) {

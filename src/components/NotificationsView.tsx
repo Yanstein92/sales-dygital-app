@@ -42,9 +42,11 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
     payment: userProfile?.notificationSettings?.payment ?? true,
     refund: userProfile?.notificationSettings?.refund ?? true,
     modification: userProfile?.notificationSettings?.modification ?? true,
+    deliveryReminder: userProfile?.notificationSettings?.deliveryReminder ?? true,
+    deliveryReminderHours: userProfile?.notificationSettings?.deliveryReminderHours ?? 24,
   };
 
-  const handleToggleSetting = async (key: keyof typeof settings) => {
+  const handleToggleSetting = async (key: keyof Omit<typeof settings, 'deliveryReminderHours'>) => {
     if (!userAuth?.uid) return;
     const newSettings = {
       ...settings,
@@ -52,6 +54,27 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
     };
 
     // Optimistic update of React context
+    setUserProfile(prev => prev ? {
+      ...prev,
+      notificationSettings: newSettings
+    } : null);
+
+    try {
+      await setDoc(doc(db, getUserDocPath(userAuth.uid)), {
+        notificationSettings: newSettings
+      }, { merge: true });
+    } catch (e) {
+      console.error("Failed to save settings to Firestore", e);
+    }
+  };
+
+  const handleUpdateHoursSetting = async (hours: number) => {
+    if (!userAuth?.uid) return;
+    const newSettings = {
+      ...settings,
+      deliveryReminderHours: hours
+    };
+
     setUserProfile(prev => prev ? {
       ...prev,
       notificationSettings: newSettings
@@ -398,6 +421,53 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
                   }`}
                 />
               </button>
+            </div>
+
+            {/* Toggle 6: Pre-delivery Reminders */}
+            <div className="flex flex-col gap-3 pt-3 border-t border-slate-50">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-0.5">
+                  <label className="text-xs font-black text-slate-800 cursor-pointer">Rappels de livraison</label>
+                  <p className="text-[10px] text-slate-400 font-medium leading-normal">
+                    Alertes de rappel envoyées aux administrateurs, commerciaux et gestionnaires de stock avant chaque livraison.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleToggleSetting('deliveryReminder')}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    settings.deliveryReminder ? 'bg-indigo-600' : 'bg-slate-200'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                      settings.deliveryReminder ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {settings.deliveryReminder && (
+                <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-100 max-w-xs self-start w-full">
+                  <span className="text-[10px] font-black text-slate-500 pl-1.5">Délai :</span>
+                  <div className="flex gap-1 flex-1">
+                    {[24, 48, 72].map(hours => (
+                      <button
+                        key={hours}
+                        type="button"
+                        onClick={() => handleUpdateHoursSetting(hours)}
+                        className={`flex-1 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                          settings.deliveryReminderHours === hours
+                            ? 'bg-white text-indigo-600 shadow-sm border border-slate-250 font-black'
+                            : 'text-slate-500 hover:text-slate-850'
+                        }`}
+                      >
+                        {hours}h
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
           </div>

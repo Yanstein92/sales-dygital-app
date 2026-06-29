@@ -85,10 +85,21 @@ export const CarOutlineSVG: React.FC = () => (
 );
 
 export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
-  const { vehicles, userProfile, databaseUid } = useApp();
+  const { vehicles, userProfile, databaseUid, selectedVehicleId, setSelectedVehicleId } = useApp();
   
   // View states
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+
+  // Monitor selectedVehicleId from global search
+  useEffect(() => {
+    if (selectedVehicleId && vehicles.length > 0) {
+      const found = vehicles.find(v => v.id === selectedVehicleId);
+      if (found) {
+        setSelectedVehicle(found);
+        setSelectedVehicleId(null);
+      }
+    }
+  }, [selectedVehicleId, vehicles]);
   const [isAdding, setIsAdding] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
@@ -571,7 +582,7 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
     const headers = [
       'Entreprise / Depot Vente', 'Type', 'Type 2', 'Ref Interne', 'N VO', 'Immatriculation', 'VIN',
       'Marque', 'Modele', 'Version', 'MEC', 'Annee', 'Energie', 'Couleur', 'Kms', 'Prix d achat',
-      'Prix Particulier TTC', 'Prix Pro TTC', 'Double de cles', 'Defauts', 'Garantie', 'Statut'
+      'Prix Particulier HT', 'Prix Pro HT', 'Double de cles', 'Defauts', 'Garantie', 'Statut'
     ];
 
     const rows = filteredVehicles.map(v => [
@@ -622,45 +633,54 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50/50">
+    <div className="flex flex-col h-full bg-slate-50/50 animate-fade-in-up">
       {/* Top Banner & Title */}
-      <div className="bg-white border-b border-slate-100 px-8 py-6 flex flex-col md:flex-row md:items-center justify-between gap-4 select-none">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <Car className="text-blue-600 w-7 h-7" />
-            Gestion de Stock
-          </h1>
-          <p className="text-slate-500 text-xs mt-0.5 font-medium">
-            Visualisez et gérez le parc automobile de vos entreprises. Suivez l'administratif, l'état de carrosserie, les prix d'achat/vente et créez des bons de commande.
-          </p>
-        </div>
+      <div className="px-8 pt-8">
+        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden select-none">
+          <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-10 bg-[radial-gradient(circle_at_top_right,var(--color-indigo-400),transparent_50%)] pointer-events-none" />
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 text-indigo-400 text-xs font-black uppercase tracking-widest mb-1.5">
+                <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                Parc Automobile
+              </div>
+              <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white flex items-center gap-2">
+                <Car className="text-indigo-400 w-7 h-7" />
+                Gestion de Stock
+              </h1>
+              <p className="text-slate-300 text-xs md:text-sm mt-1.5 font-medium max-w-2xl leading-relaxed">
+                Visualisez et gérez le parc automobile de vos entreprises. Suivez l'administratif, l'état de carrosserie, les prix d'achat/vente et créez des bons de commande.
+              </p>
+            </div>
 
-        <div className="flex items-center gap-2.5">
-          <button 
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer"
-          >
-            <FileDown size={15} />
-            Exporter CSV ({filteredVehicles.length})
-          </button>
+            <div className="flex items-center gap-2.5 self-start md:self-center">
+              <button 
+                onClick={handleExportCSV}
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/10 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <FileDown size={15} />
+                Exporter CSV ({filteredVehicles.length})
+              </button>
 
-          <button 
-            onClick={() => {
-              setForm(initialFormState());
-              setDefautPoints([]);
-              setIsAdding(true);
-              setIsEditing(false);
-            }}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-xs font-black shadow-lg shadow-blue-500/25 transition-all cursor-pointer"
-          >
-            <Plus size={16} />
-            Ajouter un Véhicule
-          </button>
+              <button 
+                onClick={() => {
+                  setForm(initialFormState());
+                  setDefautPoints([]);
+                  setIsAdding(true);
+                  setIsEditing(false);
+                }}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl text-xs font-black shadow-lg shadow-indigo-500/25 transition-all cursor-pointer"
+              >
+                <Plus size={16} />
+                Ajouter un Véhicule
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Main Body */}
-      <div className="flex-1 overflow-auto p-8 flex flex-col gap-6">
+      <div className="flex-1 overflow-auto px-8 py-6 flex flex-col gap-6">
         
         {/* Filters Panel */}
         <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-xs flex flex-col gap-4">
@@ -744,7 +764,7 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
                       N° VO <ArrowUpDown size={10} className="inline ml-1" />
                     </th>
                     <th className="py-4 px-4 cursor-pointer hover:bg-slate-100 transition-all text-right" onClick={() => handleSort('prixParticulierTTC')}>
-                      Prix TTC <ArrowUpDown size={10} className="inline ml-1" />
+                      Prix HT <ArrowUpDown size={10} className="inline ml-1" />
                     </th>
                     <th className="py-4 px-4 cursor-pointer hover:bg-slate-100 transition-all text-center" onClick={() => handleSort('status')}>
                       Statut <ArrowUpDown size={10} className="inline ml-1" />
@@ -970,16 +990,16 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
                     </div>
                   )}
                   <div className="flex justify-between items-center text-xs pt-1">
-                    <span className="text-slate-400 font-semibold">Prix Particulier TTC</span>
+                    <span className="text-slate-400 font-semibold">Prix Particulier HT</span>
                     <span className="text-base font-black text-emerald-400">
-                      {selectedVehicle.prixParticulierTTC ? `${selectedVehicle.prixParticulierTTC.toLocaleString()} € TTC` : 'Non fixé'}
+                      {selectedVehicle.prixParticulierTTC ? `${selectedVehicle.prixParticulierTTC.toLocaleString()} € HT` : 'Non fixé'}
                     </span>
                   </div>
                   {selectedVehicle.prixProfessionnelTTC && (
                     <div className="flex justify-between items-center text-xs border-t border-slate-800 pt-2">
-                      <span className="text-slate-400">Prix Pro TTC</span>
+                      <span className="text-slate-400">Prix Pro HT</span>
                       <span className="font-extrabold text-slate-200">
-                        {selectedVehicle.prixProfessionnelTTC.toLocaleString()} € TTC
+                        {selectedVehicle.prixProfessionnelTTC.toLocaleString()} € HT
                       </span>
                     </div>
                   )}
@@ -1419,7 +1439,7 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
 
                     {/* Prix Particulier */}
                     <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-xs flex flex-col gap-2.5">
-                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">Prix Particulier (TTC) *</span>
+                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">Prix Particulier (HT) *</span>
                       <div className="flex items-center">
                         <input 
                           type="number"
@@ -1434,7 +1454,7 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
 
                     {/* Prix Professionnel */}
                     <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-xs flex flex-col gap-2.5">
-                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">Prix Professionnel (TTC)</span>
+                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">Prix Professionnel (HT)</span>
                       <div className="flex items-center">
                         <input 
                           type="number"
@@ -1449,7 +1469,7 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
 
                     {/* Prix Promo */}
                     <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-xs flex flex-col gap-2.5">
-                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">Prix Promo (TTC)</span>
+                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">Prix Promo (HT)</span>
                       <div className="flex items-center">
                         <input 
                           type="number"

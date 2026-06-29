@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Loader2, CheckCircle2, LogOut, Users, Edit2, Check, KeyRound, LayoutDashboard, Car, ShieldCheck, Activity, Menu, X, Trash2, TrendingUp, Calendar as CalendarIcon, Clock, Search, Bell, ChevronDown, Globe } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Loader2, CheckCircle2, LogOut, Users, Edit2, Check, KeyRound, LayoutDashboard, Car, ShieldCheck, Activity, Menu, X, Trash2, TrendingUp, Calendar as CalendarIcon, Clock, Search, Bell, ChevronDown, Globe, FileText, MessageSquare, MoreHorizontal } from 'lucide-react';
 import { AppProvider, useApp } from './lib/context';
 import { auth, signOut, db, doc, setDoc, getUserDocPath, getUserPath, collection, onSnapshot } from './lib/firebase';
 import { CustomLogo } from './components/CustomLogo';
@@ -16,7 +16,11 @@ import { ClientBooking } from './components/ClientBooking';
 import { MyAccount } from './components/MyAccount';
 import { NotificationsView, Notification } from './components/NotificationsView';
 import { StockView } from './components/StockView';
+import { ClientsView } from './components/ClientsView';
+import { PdfTemplatesEditor } from './components/PdfTemplatesEditor';
+import { ChatView } from './components/ChatView';
 import { Sale } from './types';
+import { checkAndSendDeliveryReminders } from './lib/notifications';
 // PDF parsing logic pulled into helper to keep App clean
 const processPDFFile = async (
   file: File, 
@@ -193,7 +197,11 @@ const processPDFFile = async (
 };
 
 const MainAppContent: React.FC = () => {
-  const { userAuth, userProfile, isDbLoading, sales, teamMembers, payments } = useApp();
+  const { 
+    userAuth, userProfile, isDbLoading, sales, teamMembers, payments, databaseUid,
+    vehicles, clients, setSelectedClientId, setSelectedVehicleId 
+  } = useApp();
+  
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [draftExtraction, setDraftExtraction] = useState<any>(null);
@@ -204,10 +212,367 @@ const MainAppContent: React.FC = () => {
   const [adminPassword, setAdminPassword] = useState('');
   const [isAdminPath, setIsAdminPath] = useState(window.location.pathname === '/salesadmin');
 
+  // Sidebar drag & drop ordering state
+  const [sidebarOrder, setSidebarOrder] = useState<string[]>([
+    'dashboard', 'delivery_calendar', 'stock', 'clients', 'chat', 'perf_dashboard'
+  ]);
+  const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
+  const [isSidebarEditMode, setIsSidebarEditMode] = useState(false);
+
+  // Load custom sidebar order on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('sidebar_custom_order');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as string[];
+        const validDefault = ['dashboard', 'delivery_calendar', 'stock', 'clients', 'chat', 'perf_dashboard'];
+        const filtered = parsed.filter(id => validDefault.includes(id));
+        const missing = validDefault.filter(id => !filtered.includes(id));
+        setSidebarOrder([...filtered, ...missing]);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, []);
+
+  const handleDragStart = (idx: number) => {
+    if (!isSidebarEditMode) return;
+    setDraggedIdx(idx);
+  };
+
+  const handleDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    if (!isSidebarEditMode) return;
+    if (draggedIdx === null || draggedIdx === idx) return;
+
+    const newOrder = [...sidebarOrder];
+    const draggedItem = newOrder[draggedIdx];
+    newOrder.splice(draggedIdx, 1);
+    newOrder.splice(idx, 0, draggedItem);
+    setDraggedIdx(idx);
+    setSidebarOrder(newOrder);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIdx(null);
+    localStorage.setItem('sidebar_custom_order', JSON.stringify(sidebarOrder));
+  };
+
+  // Compute merged clients (including manual ones, buyers, and intermédiaires/references from Sales)
+  const mergedClientsForSearch = useMemo(() => {
+    const clientMap = new Map<string, any>();
+
+    // 1. Process explicit clients from Firestore
+    clients.forEach(c => {
+      const key = 'manual::' + String(c.id || '').trim().toLowerCase();
+      clientMap.set(key, {
+        id: c.id,
+        name: c.name,
+        phone: c.phone || '',
+        email: c.email || '',
+        address: c.address || '',
+        zipCode: c.zipCode || '',
+        city: c.city || '',
+        notes: c.notes || '',
+        isManual: true,
+        type: (c as any).type || 'client',
+        purchases: [] as Sale[],
+        totalSpent: 0,
+      });
+    });
+
+    // 2. Process clients from Sales
+    sales.forEach(s => {
+      const name = String(s.clientName || '').trim();
+      if (name) {
+        const clientKey = 'sale_client::' + name.toLowerCase();
+        if (clientMap.has(clientKey)) {
+          const existing = clientMap.get(clientKey);
+          if (!existing.phone && s.phone) existing.phone = s.phone;
+          if (!existing.email && s.email) existing.email = s.email;
+          if (!existing.address && s.address) existing.address = s.address;
+          if (!existing.zipCode && s.zipCode) existing.zipCode = s.zipCode;
+          if (!existing.city && s.city) existing.city = s.city;
+          existing.purchases.push(s);
+          if (s.factureStatus !== 'rembourse') {
+            existing.totalSpent += s.price || 0;
+          }
+        } else {
+          clientMap.set(clientKey, {
+            id: `sale-client-${s.id}`,
+            name: name,
+            phone: s.phone || '',
+            email: s.email || '',
+            address: s.address || '',
+            zipCode: s.zipCode || '',
+            city: s.city || '',
+            notes: '',
+            isManual: false,
+            type: 'client',
+            purchases: [s],
+            totalSpent: s.factureStatus !== 'rembourse' ? (s.price || 0) : 0,
+          });
+        }
+      }
+
+      // Intermediary / Reference contact
+      const refName = String(s.ref || '').trim();
+      if (refName && refName !== '-' && refName.toLowerCase() !== 'aucun' && refName.toLowerCase() !== 'none') {
+        const refKey = 'sale_ref::' + refName.toLowerCase();
+        if (clientMap.has(refKey)) {
+          const existing = clientMap.get(refKey);
+          existing.purchases.push(s);
+          if (s.factureStatus !== 'rembourse') {
+            existing.totalSpent += s.price || 0;
+          }
+          if (!existing.phone && s.refPhone) existing.phone = s.refPhone;
+          if (!existing.email && s.refEmail) existing.email = s.refEmail;
+        } else {
+          clientMap.set(refKey, {
+            id: `sale-ref-${s.id}`,
+            name: refName,
+            phone: s.refPhone || '',
+            email: s.refEmail || '',
+            address: '',
+            zipCode: '',
+            city: '',
+            notes: '',
+            isManual: false,
+            type: 'intermediaire',
+            purchases: [s],
+            totalSpent: s.factureStatus !== 'rembourse' ? (s.price || 0) : 0,
+          });
+        }
+      }
+    });
+
+    const finalMap = new Map<string, any>();
+    clientMap.forEach((c) => {
+      const matchKey = `${c.type}::${c.name.trim().toLowerCase()}`;
+      if (finalMap.has(matchKey)) {
+        const existing = finalMap.get(matchKey);
+        if (c.isManual) {
+          const purchases = [...existing.purchases, ...c.purchases];
+          const totalSpent = existing.totalSpent + c.totalSpent;
+          finalMap.set(matchKey, {
+            ...c,
+            purchases,
+            totalSpent
+          });
+        } else {
+          existing.purchases = [...existing.purchases, ...c.purchases];
+          existing.totalSpent += c.totalSpent;
+          if (!existing.phone && c.phone) existing.phone = c.phone;
+          if (!existing.email && c.email) existing.email = c.email;
+          if (!existing.address && c.address) existing.address = c.address;
+          if (!existing.zipCode && c.zipCode) existing.zipCode = c.zipCode;
+          if (!existing.city && c.city) existing.city = c.city;
+        }
+      } else {
+        finalMap.set(matchKey, c);
+      }
+    });
+
+    return Array.from(finalMap.values());
+  }, [sales, clients]);
+
+  // Header Global Search results computation
+  const [headerSearchQuery, setHeaderSearchQuery] = useState('');
+  const headerSearchResults = useMemo(() => {
+    const q = headerSearchQuery.trim().toLowerCase();
+    if (!q) return null;
+
+    const results = {
+      sales: [] as typeof sales,
+      vehicles: [] as typeof vehicles,
+      clients: [] as any[],
+      deliveries: [] as typeof sales
+    };
+
+    sales.forEach(s => {
+      const match = 
+        s.clientName?.toLowerCase().includes(q) ||
+        s.marque?.toLowerCase().includes(q) ||
+        s.modele?.toLowerCase().includes(q) ||
+        s.plaque?.toLowerCase().includes(q) ||
+        s.vin?.toLowerCase().includes(q) ||
+        s.id?.toLowerCase().includes(q) ||
+        s.commercial?.toLowerCase().includes(q) ||
+        s.ref?.toLowerCase().includes(q);
+
+      if (match) {
+        if (s.deliveryDate && s.deliveryStatus === 'programmee') {
+          results.deliveries.push(s);
+        } else {
+          results.sales.push(s);
+        }
+      }
+    });
+
+    vehicles.forEach(v => {
+      const match = 
+        v.marque?.toLowerCase().includes(q) ||
+        v.modele?.toLowerCase().includes(q) ||
+        v.plaque?.toLowerCase().includes(q) ||
+        v.vin?.toLowerCase().includes(q) ||
+        v.color?.toLowerCase().includes(q) ||
+        v.status?.toLowerCase().includes(q);
+      
+      if (match) {
+        results.vehicles.push(v);
+      }
+    });
+
+    mergedClientsForSearch.forEach(c => {
+      const match = 
+        c.name?.toLowerCase().includes(q) ||
+        c.phone?.toLowerCase().includes(q) ||
+        c.email?.toLowerCase().includes(q) ||
+        c.city?.toLowerCase().includes(q) ||
+        c.address?.toLowerCase().includes(q);
+
+      if (match) {
+        results.clients.push(c);
+      }
+    });
+
+    return results;
+  }, [headerSearchQuery, sales, vehicles, mergedClientsForSearch]);
+
+  // Floating Chat message notification toasts & Dual-tone Synthesizer Audio chime
+  const [chatToasts, setChatToasts] = useState<Array<{ id: string, senderName: string, text: string, sessionName: string, sessionId: string }>>([]);
+  const lastMsgTimestampRef = useRef<Record<string, string>>({});
+  const isInitialLoadRef = useRef(true);
+
+  const playChime = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.3);
+      setTimeout(() => {
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        osc2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(659.25, audioCtx.currentTime);
+        gain2.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain2.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+        osc2.start();
+        osc2.stop(audioCtx.currentTime + 0.35);
+      }, 120);
+    } catch (e) {
+      console.warn("Audio Context blocked or failed:", e);
+    }
+  };
+
+  useEffect(() => {
+    if (!databaseUid || !userAuth?.uid) return;
+
+    const currentUserId = userAuth.uid;
+    const colRef = collection(db, getUserPath('chats', databaseUid));
+    
+    const unsub = onSnapshot(colRef, (snapshot) => {
+      const isInitial = isInitialLoadRef.current;
+      
+      snapshot.docChanges().forEach((change) => {
+        const data = change.doc.data();
+        const sessionId = change.doc.id;
+        const lastMessage = data.lastMessage;
+
+        if (lastMessage && lastMessage.senderId !== currentUserId) {
+          const storedTime = lastMsgTimestampRef.current[sessionId];
+          const newTime = lastMessage.timestamp;
+
+          if (newTime && storedTime !== newTime) {
+            lastMsgTimestampRef.current[sessionId] = newTime;
+
+            if (!isInitial) {
+              const msgAge = Date.now() - new Date(newTime).getTime();
+              if (msgAge < 15000 && currentView !== 'chat') {
+                let showToasts = true;
+                let playSounds = true;
+                const storedSettings = localStorage.getItem(`chat_notif_settings_${currentUserId}`);
+                if (storedSettings) {
+                  try {
+                    const settings = JSON.parse(storedSettings);
+                    if (settings.muteAll) {
+                      showToasts = false;
+                      playSounds = false;
+                    } else if (settings.muteGroups && data.isGroup) {
+                      showToasts = false;
+                      playSounds = false;
+                    } else {
+                      showToasts = settings.showToasts !== false;
+                      playSounds = settings.playSounds !== false;
+                    }
+                  } catch (e) {
+                    console.error(e);
+                  }
+                }
+
+                if (playSounds) {
+                  playChime();
+                }
+
+                if (showToasts) {
+                  const toastId = 'toast_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+                  setChatToasts(prev => [
+                    ...prev,
+                    {
+                      id: toastId,
+                      senderName: lastMessage.senderName,
+                      text: lastMessage.text,
+                      sessionName: data.name,
+                      sessionId
+                    }
+                  ]);
+                  setTimeout(() => {
+                    setChatToasts(prev => prev.filter(t => t.id !== toastId));
+                  }, 5000);
+                }
+              }
+            }
+          }
+        }
+      });
+      
+      isInitialLoadRef.current = false;
+    });
+
+    return () => unsub();
+  }, [databaseUid, userAuth?.uid, currentView]);
+
+  // Trigger 24h pre-delivery reminders check
+  useEffect(() => {
+    if (sales && sales.length > 0 && teamMembers && teamMembers.length > 0 && databaseUid) {
+      checkAndSendDeliveryReminders(sales, teamMembers, databaseUid);
+    }
+  }, [sales, teamMembers, databaseUid]);
+
   const [isEditingCompany, setIsEditingCompany] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showManageCompanies, setShowManageCompanies] = useState(false);
+
+  const generateNextBdcNumber = (): string => {
+    const numbers = sales
+      .map(s => {
+        const cleaned = String(s.bdcNumber || '').replace(/\D/g, '');
+        return parseInt(cleaned);
+      })
+      .filter(n => !isNaN(n) && n > 0);
+    const maxNum = numbers.length > 0 ? Math.max(...numbers) : 6000;
+    return String(maxNum + 1);
+  };
 
   const [searchQuery, setSearchQuery] = useState('');
   const [currentLanguage, setCurrentLanguage] = useState({ code: 'fr', name: 'French', flag: '🇫🇷' });
@@ -303,10 +668,16 @@ const MainAppContent: React.FC = () => {
         }
       } else if (hash === '#my_account') {
         setCurrentView('my_account');
+      } else if (hash === '#pdf_templates') {
+        setCurrentView('pdf_templates');
       } else if (hash === '#notifications') {
         setCurrentView('notifications');
       } else if (hash === '#stock') {
         setCurrentView('stock');
+      } else if (hash === '#clients') {
+        setCurrentView('clients');
+      } else if (hash === '#chat') {
+        setCurrentView('chat');
       } else {
         setSelectedSaleId(null);
         setCurrentView('dashboard');
@@ -551,54 +922,105 @@ const MainAppContent: React.FC = () => {
 
           <div className="h-px w-8 bg-slate-800"></div>
 
-          {/* Navigation Links */}
-          <nav className="flex flex-col gap-4 w-full px-2">
-            <button 
-              onClick={() => { window.location.hash = 'dashboard'; }}
-              className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${currentView === 'dashboard' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
-              title="Tableau de bord"
-            >
-              <LayoutDashboard size={20} />
-              <span className="text-[9px] font-bold tracking-tight block md:hidden lg:block">Ventes</span>
-              {/* Tooltip for desktop */}
-              <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Tableau de bord</div>
-            </button>
+          {/* Navigation Links with Drag-and-Drop Reordering */}
+          <nav className="flex flex-col gap-3.5 w-full px-2">
+            {sidebarOrder.map((id, index) => {
+              if (id === 'perf_dashboard' && userProfile?.role !== 'admin') return null;
 
-            <button 
-              onClick={() => { window.location.hash = 'delivery_calendar'; }}
-              className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${currentView === 'delivery_calendar' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
-              title="Calendrier des sorties"
-            >
-              <CalendarIcon size={20} />
-              <span className="text-[9px] font-bold tracking-tight block md:hidden lg:block">Agenda</span>
-              <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Calendrier des sorties</div>
-            </button>
+              let IconComp = LayoutDashboard;
+              let label = 'Ventes';
+              let tooltip = 'Bons de commande';
+              let hashValue = 'dashboard';
+              let activeColor = 'bg-blue-600 text-white shadow-lg shadow-blue-600/20';
 
-            <button 
-              onClick={() => { window.location.hash = 'stock'; }}
-              className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${currentView === 'stock' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
-              title="Stock Véhicules"
-            >
-              <Car size={20} />
-              <span className="text-[9px] font-bold tracking-tight block md:hidden lg:block">Stock</span>
-              <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Stock Véhicules</div>
-            </button>
+              if (id === 'dashboard') {
+                IconComp = LayoutDashboard;
+                label = 'Ventes';
+                tooltip = 'Tableau de bord';
+                hashValue = 'dashboard';
+              } else if (id === 'delivery_calendar') {
+                IconComp = CalendarIcon;
+                label = 'Agenda';
+                tooltip = 'Calendrier des sorties';
+                hashValue = 'delivery_calendar';
+              } else if (id === 'stock') {
+                IconComp = Car;
+                label = 'Stock';
+                tooltip = 'Stock Véhicules';
+                hashValue = 'stock';
+              } else if (id === 'clients') {
+                IconComp = Users;
+                label = 'Clients';
+                tooltip = 'Annuaire Clients';
+                hashValue = 'clients';
+              } else if (id === 'chat') {
+                IconComp = MessageSquare;
+                label = 'Chat';
+                tooltip = 'Messagerie';
+                hashValue = 'chat';
+              } else if (id === 'perf_dashboard') {
+                IconComp = TrendingUp;
+                label = 'Stats';
+                tooltip = 'Performances';
+                hashValue = 'perf_dashboard';
+                activeColor = 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20';
+              }
 
-            {userProfile?.role === 'admin' && (
-              <button 
-                onClick={() => { window.location.hash = 'perf_dashboard'; }}
-                className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${currentView === 'perf_dashboard' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
-                title="Performance"
-              >
-                <TrendingUp size={20} />
-                <span className="text-[9px] font-bold tracking-tight block md:hidden lg:block">Stats</span>
-                <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">Performances</div>
-              </button>
-            )}
+              const isActive = currentView === id;
+
+              return (
+                <button 
+                  key={id}
+                  draggable={isSidebarEditMode ? "true" : "false"}
+                  onDragStart={() => handleDragStart(index)}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDragEnd={handleDragEnd}
+                  onClick={() => { window.location.hash = hashValue; }}
+                  className={`p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${
+                    isSidebarEditMode 
+                      ? 'border border-dashed border-amber-500/50 bg-amber-500/5 animate-pulse cursor-grab active:cursor-grabbing hover:bg-amber-500/10' 
+                      : 'cursor-pointer'
+                  } ${
+                    isActive 
+                      ? activeColor 
+                      : 'text-slate-400 hover:text-white hover:bg-slate-900/80'
+                  }`}
+                  title={tooltip}
+                >
+                  <IconComp size={18} />
+                  <span className="text-[9px] font-black tracking-tight block md:hidden lg:block">
+                    {label}
+                  </span>
+                  
+                  {/* Tooltip for desktop */}
+                  <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                    {tooltip}
+                  </div>
+                </button>
+              );
+            })}
           </nav>
         </div>
 
-        {/* Bottom part of sidebar is now empty as logout is handled via the profile menu */}
+        {/* Bottom part of sidebar has toggle to customize layout order safely */}
+        <div className="flex flex-col items-center gap-4 w-full">
+          <div className="h-px w-8 bg-slate-800"></div>
+          
+          <button
+            onClick={() => setIsSidebarEditMode(!isSidebarEditMode)}
+            className={`p-2.5 rounded-xl transition-all relative group ${
+              isSidebarEditMode 
+                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-bounce' 
+                : 'text-slate-500 hover:text-white hover:bg-slate-900/80'
+            }`}
+            title="Réorganiser la barre latérale"
+          >
+            <MoreHorizontal size={18} />
+            <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+              {isSidebarEditMode ? "Terminer la réorganisation" : "Réorganiser le menu"}
+            </div>
+          </button>
+        </div>
       </aside>
 
       {/* MAIN CONTAINER next to Sidebar */}
@@ -612,7 +1034,7 @@ const MainAppContent: React.FC = () => {
                 <span>Sales Dygital</span>
                 <span className="text-slate-300">/</span>
                 <span className="text-slate-600 font-black">
-                  {currentView === 'dashboard' ? 'Bons de commande' : currentView === 'detail' ? 'Détails du dossier' : currentView === 'delivery_calendar' ? 'Calendrier des sorties' : currentView === 'my_account' ? 'Mon Compte' : currentView === 'notifications' ? 'Notifications' : 'Validation' }
+                  {currentView === 'dashboard' ? 'Bons de commande' : currentView === 'detail' ? 'Détails du dossier' : currentView === 'delivery_calendar' ? 'Calendrier des sorties' : currentView === 'my_account' ? 'Mon Compte' : currentView === 'pdf_templates' ? 'Éditer modèles PDF' : currentView === 'notifications' ? 'Notifications' : currentView === 'clients' ? 'Clients' : currentView === 'perf_dashboard' ? 'Statistiques' : currentView === 'stock' ? 'Stock' : currentView === 'team_management' ? 'Équipe' : currentView === 'company_management' ? 'Gestion Entreprise' : 'Validation' }
                 </span>
               </div>
               <div className="flex items-center gap-2 group mt-0.5">
@@ -654,23 +1076,160 @@ const MainAppContent: React.FC = () => {
               </div>
               <input
                 type="text"
-                value={searchQuery}
+                value={headerSearchQuery}
                 onChange={(e) => {
+                  setHeaderSearchQuery(e.target.value);
                   setSearchQuery(e.target.value);
-                  if (currentView !== 'dashboard') {
-                    window.location.hash = 'dashboard';
-                  }
                 }}
                 className="block w-full pl-10 pr-10 py-2.5 border border-slate-200 bg-slate-50 hover:bg-slate-100/50 focus:bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600/80 rounded-full text-xs font-semibold transition-all"
-                placeholder="Rechercher un dossier..."
+                placeholder="Dossier, véhicule, client, livraison..."
               />
-              {searchQuery && (
+              {headerSearchQuery && (
                 <button
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => {
+                    setHeaderSearchQuery('');
+                    setSearchQuery('');
+                  }}
                   className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
+              )}
+
+              {/* Global search dropdown */}
+              {headerSearchQuery && headerSearchResults && (
+                <>
+                  <div className="fixed inset-0 z-40 cursor-default" onClick={() => setHeaderSearchQuery('')} />
+                  <div className="absolute left-0 mt-2 w-[340px] md:w-[420px] lg:w-[480px] max-h-[480px] bg-white border border-slate-150 shadow-2xl rounded-2xl p-4 overflow-y-auto z-50 animate-fade-in text-slate-800 flex flex-col gap-3.5">
+                    {/* No results message */}
+                    {headerSearchResults.sales.length === 0 &&
+                     headerSearchResults.vehicles.length === 0 &&
+                     headerSearchResults.clients.length === 0 &&
+                     headerSearchResults.deliveries.length === 0 && (
+                      <div className="text-center py-6 text-slate-400 text-xs font-bold">
+                        Aucun résultat pour "{headerSearchQuery}"
+                      </div>
+                    )}
+
+                    {/* 1. Dossiers / Bons de commande */}
+                    {headerSearchResults.sales.length > 0 && (
+                      <div>
+                        <p className="text-[10px] uppercase font-black text-slate-400 tracking-wider mb-1.5 flex items-center gap-1.5 px-1">
+                          <span>📁</span> Bons de commande ({headerSearchResults.sales.length})
+                        </p>
+                        <div className="flex flex-col gap-1">
+                          {headerSearchResults.sales.slice(0, 4).map(s => (
+                            <div
+                              key={s.id}
+                              onClick={() => {
+                                setHeaderSearchQuery('');
+                                window.location.hash = `detail/${s.id}`;
+                              }}
+                              className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-xl cursor-pointer border border-transparent hover:border-slate-100 transition-all text-xs font-semibold text-slate-700"
+                            >
+                              <div className="truncate pr-2">
+                                <p className="font-bold text-slate-800 truncate">{s.clientName}</p>
+                                <p className="text-[10px] text-slate-400 truncate">{s.marque} {s.modele} • {s.plaque || 'Sans plaque'}</p>
+                              </div>
+                              <span className="shrink-0 text-[10px] bg-blue-50 text-blue-600 font-black px-2 py-0.5 rounded-md">
+                                N° {s.bdcNumber}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 2. Stock Véhicules */}
+                    {headerSearchResults.vehicles.length > 0 && (
+                      <div className="border-t border-slate-100 pt-3">
+                        <p className="text-[10px] uppercase font-black text-slate-400 tracking-wider mb-1.5 flex items-center gap-1.5 px-1">
+                          <span>🚗</span> Véhicules en Stock ({headerSearchResults.vehicles.length})
+                        </p>
+                        <div className="flex flex-col gap-1">
+                          {headerSearchResults.vehicles.slice(0, 4).map(v => (
+                            <div
+                              key={v.id}
+                              onClick={() => {
+                                setHeaderSearchQuery('');
+                                setSelectedVehicleId(v.id);
+                                window.location.hash = 'stock';
+                              }}
+                              className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-xl cursor-pointer border border-transparent hover:border-slate-100 transition-all text-xs font-semibold text-slate-700"
+                            >
+                              <div className="truncate pr-2">
+                                <p className="font-bold text-slate-800 truncate">{v.marque} {v.modele}</p>
+                                <p className="text-[10px] text-slate-400 truncate">{v.immatriculation || 'Pas d\'immat'} • VIN: {v.vin || 'Pas de VIN'}</p>
+                              </div>
+                              <span className="shrink-0 text-[10px] uppercase font-black px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-600">
+                                {v.status}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 3. Clients */}
+                    {headerSearchResults.clients.length > 0 && (
+                      <div className="border-t border-slate-100 pt-3">
+                        <p className="text-[10px] uppercase font-black text-slate-400 tracking-wider mb-1.5 flex items-center gap-1.5 px-1">
+                          <span>👥</span> Clients ({headerSearchResults.clients.length})
+                        </p>
+                        <div className="flex flex-col gap-1">
+                          {headerSearchResults.clients.slice(0, 4).map(c => (
+                            <div
+                              key={c.id}
+                              onClick={() => {
+                                setHeaderSearchQuery('');
+                                setSelectedClientId(c.id);
+                                window.location.hash = 'clients';
+                              }}
+                              className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-xl cursor-pointer border border-transparent hover:border-slate-100 transition-all text-xs font-semibold text-slate-700"
+                            >
+                              <div className="truncate pr-2">
+                                <p className="font-bold text-slate-800 truncate">{c.name}</p>
+                                <p className="text-[10px] text-slate-400 truncate">{c.phone || 'Pas de tel'} • {c.email || 'Pas d\'email'}</p>
+                              </div>
+                              <span className="shrink-0 text-[10px] bg-indigo-50 text-indigo-600 font-black px-2 py-0.5 rounded-md uppercase">
+                                {c.type === 'client' ? 'Client' : 'Intermédiaire'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 4. Livraisons */}
+                    {headerSearchResults.deliveries.length > 0 && (
+                      <div className="border-t border-slate-100 pt-3">
+                        <p className="text-[10px] uppercase font-black text-slate-400 tracking-wider mb-1.5 flex items-center gap-1.5 px-1">
+                          <span>📅</span> Livraisons Planifiées ({headerSearchResults.deliveries.length})
+                        </p>
+                        <div className="flex flex-col gap-1">
+                          {headerSearchResults.deliveries.slice(0, 4).map(d => (
+                            <div
+                              key={d.id}
+                              onClick={() => {
+                                setHeaderSearchQuery('');
+                                window.location.hash = 'delivery_calendar';
+                              }}
+                              className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-xl cursor-pointer border border-transparent hover:border-slate-100 transition-all text-xs font-semibold text-slate-700"
+                            >
+                              <div className="truncate pr-2">
+                                <p className="font-bold text-slate-800 truncate">{d.clientName}</p>
+                                <p className="text-[10px] text-slate-400 truncate">Date: {d.deliveryDate} • {d.marque} {d.modele}</p>
+                              </div>
+                              <span className="shrink-0 text-[10px] bg-purple-50 text-purple-600 font-black px-2 py-0.5 rounded-md">
+                                {d.deliverySlot || 'Journée'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -937,6 +1496,17 @@ const MainAppContent: React.FC = () => {
                               <Car size={14} className="text-slate-500" />
                               <span>Gestion des Entreprises</span>
                             </button>
+
+                            <button 
+                              onClick={() => {
+                                setShowProfileMenu(false);
+                                window.location.hash = 'pdf_templates';
+                              }}
+                              className="flex items-center gap-2 px-2.5 py-2 hover:bg-slate-50 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-bold transition-all text-left w-full"
+                            >
+                              <FileText size={14} className="text-slate-500" />
+                              <span>Éditer modèles PDF</span>
+                            </button>
                           </>
                         )}
                       </div>
@@ -976,7 +1546,7 @@ const MainAppContent: React.FC = () => {
                   onSelectSale={(id) => window.location.hash = `detail/${id}`} 
                   onProcessPdf={(f) => processPDFFile(f, sales, setDraftExtraction, (view) => window.location.hash = view, showToast, setIsLoading, userProfile)}
                   onManualEntry={() => {
-                    setDraftExtraction({ isManual: true, bdcNumber: '', company: userProfile?.companyId || 'KDB AUTO', clientName: '', marque: '', modele: '', color: '', vin: '', plaque: '', mec: '', price: '', date: new Date().toISOString().split('T')[0], commercial: userProfile?.name || 'À assigner', phone: '', email: '', ref: '', address: '', zipCode: '', city: '', draftPayments: [] });
+                    setDraftExtraction({ isManual: true, bdcNumber: generateNextBdcNumber(), company: userProfile?.companyId || 'KDB AUTO', clientName: '', marque: '', modele: '', color: '', vin: '', plaque: '', mec: '', price: '', date: new Date().toISOString().split('T')[0], commercial: userProfile?.name || 'À assigner', phone: '', email: '', ref: '', address: '', zipCode: '', city: '', draftPayments: [] });
                     window.location.hash = 'pdf_validation';
                   }}
                   searchQuery={searchQuery}
@@ -1026,7 +1596,7 @@ const MainAppContent: React.FC = () => {
                   onCreateBdc={(vehicle) => {
                     setDraftExtraction({
                       isManual: true,
-                      bdcNumber: vehicle.numDossier || '',
+                      bdcNumber: generateNextBdcNumber(),
                       company: vehicle.site || userProfile?.companyId || 'KDB AUTO',
                       clientName: '',
                       phone: '',
@@ -1037,6 +1607,9 @@ const MainAppContent: React.FC = () => {
                       vin: vehicle.vin || '',
                       plaque: vehicle.immatriculation || '',
                       mec: vehicle.mec || '',
+                      kms: vehicle.kms || undefined,
+                      garantie: vehicle.typeGarantie || '',
+                      energie: vehicle.energie || '',
                       price: vehicle.prixParticulierTTC?.toString() || '',
                       date: new Date().toISOString().split('T')[0],
                       commercial: userProfile?.name || 'À assigner',
@@ -1050,8 +1623,17 @@ const MainAppContent: React.FC = () => {
                   }}
                 />
               )}
+               {currentView === 'clients' && (
+                <ClientsView onShowToast={showToast} />
+              )}
+              {currentView === 'chat' && (
+                <ChatView onShowToast={showToast} />
+              )}
               {currentView === 'my_account' && (
                 <MyAccount onBack={() => window.location.hash = 'dashboard'} onShowToast={showToast} />
+              )}
+              {currentView === 'pdf_templates' && (
+                <PdfTemplatesEditor onBack={() => window.location.hash = 'dashboard'} onShowToast={showToast} />
               )}
               {currentView === 'notifications' && (
                 <NotificationsView 
@@ -1083,12 +1665,52 @@ const MainAppContent: React.FC = () => {
         </footer>
       </div>
 
+      {/* Floating Chat notification toasts */}
+      <div className="fixed bottom-4 right-4 flex flex-col gap-2.5 z-50 select-none max-w-xs w-full">
+        {chatToasts.map((toast) => (
+          <div 
+            key={toast.id}
+            onClick={() => {
+              window.location.hash = 'chat';
+              setChatToasts(prev => prev.filter(t => t.id !== toast.id));
+            }}
+            className="bg-white hover:bg-slate-50 border border-slate-100 shadow-2xl rounded-2xl p-4 flex items-start gap-3 cursor-pointer transition-all hover:scale-102 duration-300 animate-slide-in-toast"
+          >
+            <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 font-bold text-xs">
+              💬
+            </div>
+            <div className="min-w-0 flex-1">
+              <span className="text-[10px] font-black uppercase text-blue-600 tracking-wider">
+                {toast.sessionName}
+              </span>
+              <p className="text-xs font-black text-slate-800 truncate mt-0.5">
+                {toast.senderName}
+              </p>
+              <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5 leading-normal">
+                {toast.text}
+              </p>
+            </div>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setChatToasts(prev => prev.filter(t => t.id !== toast.id));
+              }}
+              className="p-1 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-lg shrink-0"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } } 
         .animate-fade-in-up { animation: fadeInUp 0.3s ease-out forwards; }
         @keyframes blob { 0% { transform: translate(0px, 0px) scale(1); } 33% { transform: translate(30px, -50px) scale(1.1); } 66% { transform: translate(-20px, 20px) scale(0.9); } 100% { transform: translate(0px, 0px) scale(1); } }
         .animate-blob { animation: blob 7s infinite; }
         .animation-delay-2000 { animation-delay: 2s; }
+        @keyframes slideInToast { from { opacity: 0; transform: translateY(30px) scale(0.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        .animate-slide-in-toast { animation: slideInToast 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
       `}} />
     </div>
   );

@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../lib/context';
-import { ArrowLeft, User, Mail, Phone, Shield, Lock, Camera, Upload, Check, Loader2, KeyRound } from 'lucide-react';
-import { doc, setDoc } from 'firebase/firestore';
+import { ArrowLeft, User, Mail, Phone, Shield, Lock, Camera, Upload, Check, Loader2, KeyRound, FileText } from 'lucide-react';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db, getUserDocPath } from '../lib/firebase';
 
 interface MyAccountProps {
@@ -21,7 +21,7 @@ const PRESET_AVATARS = [
 ];
 
 export const MyAccount: React.FC<MyAccountProps> = ({ onBack, onShowToast }) => {
-  const { userProfile, setUserProfile, userAuth } = useApp();
+  const { userProfile, setUserProfile, userAuth, databaseUid } = useApp();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // States
@@ -33,9 +33,39 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onBack, onShowToast }) => 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  // PDF templates states
+  const [selectedTemplate, setSelectedTemplate] = useState<'bdc' | 'discharge'>('bdc');
+  const [isSavingTemplates, setIsSavingTemplates] = useState(false);
+  const [templatesConfig, setTemplatesConfig] = useState({
+    bdcTitle: 'BON DE COMMANDE',
+    bdcClientSigMention: 'Lu et approuvé',
+    bdcFooterNote: '',
+    
+    dischargeTitle: 'DÉCHARGE DE RESPONSABILITÉ & REMISE DES CLÉS',
+    dischargeText: 'Je soussigné(e), [Client], certifie avoir pris livraison du véhicule [Marque] [Modèle] immatriculé [Plaque] (N° VIN : [VIN]) en parfait état et muni de tous ses documents administratifs. Par la présente, je donne décharge entière, définitive et sans réserve à la société [Entreprise] et renonce à tout recours ultérieur.',
+    dischargeSigMention: 'Bon pour décharge de sortie',
+    dischargeFooterNote: ''
+  });
+
   // Statuses
   const [isSavingDetails, setIsSavingDetails] = useState(false);
   const [isSavingPassword, setIsSavingPassword] = useState(false);
+
+  useEffect(() => {
+    const fetchTemplatesConfig = async () => {
+      if (!databaseUid) return;
+      try {
+        const docRef = doc(db, getUserDocPath(databaseUid) + '/settings/pdf_templates_config');
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          setTemplatesConfig(prev => ({ ...prev, ...snap.data() }));
+        }
+      } catch (error) {
+        console.error("Error fetching pdf templates config:", error);
+      }
+    };
+    fetchTemplatesConfig();
+  }, [databaseUid]);
 
   if (!userProfile) {
     return (
@@ -422,6 +452,7 @@ export const MyAccount: React.FC<MyAccountProps> = ({ onBack, onShowToast }) => 
               </div>
             </form>
           </div>
+
         </div>
       </div>
     </div>

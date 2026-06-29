@@ -7,7 +7,7 @@ import {
 import { useApp } from '../lib/context';
 import { Payment, Sale } from '../types';
 import { deleteDoc, doc, setDoc, db, getUserPath } from '../lib/firebase';
-import { generateRefundPDF } from '../utils/pdfGenerator';
+import { generateRefundPDF, generateBdcPDF } from '../utils/pdfGenerator';
 import { notifyFolderAction } from '../lib/notifications';
 
 interface Props {

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { auth, db, getUserPath, getUserDocPath, onAuthStateChanged, collection, onSnapshot, signInWithCustomToken, doc, getDoc, setDoc, query, where, limit, getDocs, or, OperationType, handleFirestoreError } from './firebase';
-import { Sale, Payment, UserProfile, Vehicle } from '../types';
+import { Sale, Payment, UserProfile, Vehicle, Client } from '../types';
 
 interface AppContextType {
   userAuth: User | null;
@@ -10,12 +10,17 @@ interface AppContextType {
   sales: Sale[];
   payments: Payment[];
   vehicles: Vehicle[];
+  clients: Client[];
   isDbLoading: boolean;
   setAuthError: (err: string | null) => void;
   authError: string | null;
   databaseUid: string;
   teamMembers: UserProfile[];
   refreshTeam: () => void;
+  selectedClientId: string | null;
+  setSelectedClientId: (id: string | null) => void;
+  selectedVehicleId: string | null;
+  setSelectedVehicleId: (id: string | null) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -26,10 +31,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [sales, setSales] = useState<Sale[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [teamMembers, setTeamMembers] = useState<UserProfile[]>([]);
   const [isDbLoading, setIsDbLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [databaseUid, setDatabaseUid] = useState<string>('');
+
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
 
   const fetchTeamData = async (profile: UserProfile, dbUid: string, uAuthUid: string) => {
     try {
@@ -69,6 +78,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!currentUser) {
         setSales([]);
         setPayments([]);
+        setVehicles([]);
+        setClients([]);
         setUserProfile(null);
         setIsDbLoading(false);
       }
@@ -142,6 +153,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const pathSales = getUserPath('sales', finalDatabaseUid);
         const pathPayments = getUserPath('payments', finalDatabaseUid);
         const pathVehicles = getUserPath('vehicles', finalDatabaseUid);
+        const pathClients = getUserPath('clients', finalDatabaseUid);
 
         // Fetch team members globally using server API
         fetchTeamData(profile, finalDatabaseUid, userAuth.uid);
@@ -167,7 +179,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           handleFirestoreError(error, OperationType.LIST, pathVehicles);
         });
 
-        return () => { unsubSales(); unsubPayments(); unsubVehicles(); };
+        const unsubClients = onSnapshot(collection(db, pathClients), (snapshot) => {
+          setClients(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Client)));
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, pathClients);
+        });
+
+        return () => { unsubSales(); unsubPayments(); unsubVehicles(); unsubClients(); };
       } catch (err) {
         setAuthError("Erreur de profil initial.");
         setIsDbLoading(false);
@@ -181,7 +199,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [userAuth]);
 
   return (
-    <AppContext.Provider value={{ userAuth, userProfile, setUserProfile, sales, payments, vehicles, isDbLoading, authError, setAuthError, databaseUid, teamMembers, refreshTeam }}>
+    <AppContext.Provider value={{ 
+      userAuth, userProfile, setUserProfile, sales, payments, vehicles, clients, 
+      isDbLoading, authError, setAuthError, databaseUid, teamMembers, refreshTeam,
+      selectedClientId, setSelectedClientId, selectedVehicleId, setSelectedVehicleId
+    }}>
       {children}
     </AppContext.Provider>
   );

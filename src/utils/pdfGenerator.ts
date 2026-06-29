@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { Sale, UserProfile } from '../types';
+import { Sale, UserProfile, Payment } from '../types';
 
 interface RefundPDFData {
   amount: string;
@@ -540,7 +540,8 @@ export async function generateDeliveryPDF(sale: Sale, dischargeForm: DeliveryDis
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
   doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-  doc.text("DÉCHARGE DE SORTIE & LIVRAISON", 195, topY + 2, { align: 'right' });
+  const dischargeTitle = config?.dischargeTitle || "DÉCHARGE DE SORTIE & LIVRAISON";
+  doc.text(dischargeTitle, 195, topY + 2, { align: 'right' });
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.2);
@@ -751,7 +752,8 @@ export async function generateDeliveryPDF(sale: Sale, dischargeForm: DeliveryDis
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(7.2);
   doc.setTextColor(lightGray[0], lightGray[1], lightGray[2]);
-  doc.text('Mention manuscrite "Bon pour décharge de sortie"', leftSigX + sigBoxWidth / 2, y + sigBoxHeight - 4, { align: 'center' });
+  const sigMention = config?.dischargeSigMention || 'Bon pour décharge de sortie';
+  doc.text(`Mention manuscrite "${sigMention}"`, leftSigX + sigBoxWidth / 2, y + sigBoxHeight - 4, { align: 'center' });
   doc.text('Nom, date et signature du préparateur', rightSigX + sigBoxWidth / 2, y + sigBoxHeight - 4, { align: 'center' });
 
   y += sigBoxHeight + 6;
@@ -778,7 +780,8 @@ export async function generateDeliveryPDF(sale: Sale, dischargeForm: DeliveryDis
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(lightGray[0], lightGray[1], lightGray[2]);
-  doc.text(`Document généré numériquement par ${compNameStr}. Fait à la date du ${docDateFormatted}.`, 105, 285, { align: 'center' });
+  const footerNote = config?.dischargeFooterNote || `Document généré numériquement par ${compNameStr}. Fait à la date du ${docDateFormatted}.`;
+  doc.text(footerNote, 105, 285, { align: 'center' });
 
   // Standardized Nomenclature
   const cleanClient = sanitizeFilename(sale.clientName || 'CLIENT_INCONNU');
@@ -788,6 +791,382 @@ export async function generateDeliveryPDF(sale: Sale, dischargeForm: DeliveryDis
   const cleanDate = docDateFormatted.replace(/\//g, '_');
 
   const fileName = `DECHARGE_LIVRAISON_BDC_${bdcId}_${cleanClient}_${cleanBrand}_${cleanModel}_${cleanDate}.pdf`;
+
+  doc.save(fileName);
+}
+
+export async function generateBdcPDF(sale: Sale, userProfile?: UserProfile, payments: Payment[] = [], config?: any) {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const bdcDateFormatted = sale.date ? new Date(sale.date).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
+
+  // 1. Resolve Company Details (KDB AUTO is default fallback)
+  const companyName = sale.company || userProfile?.companyId || 'KDB AUTO';
+  const compDetail = userProfile?.companiesDetails?.find(
+    c => c.name.toUpperCase() === companyName.toUpperCase()
+  );
+
+  const compNameStr = compDetail?.name || companyName || 'KDB AUTO';
+  const compAddress = compDetail?.address || '119 B RUE DE COLOMBES, 92600 ASNIERES-SUR-SEINE';
+  const compSiret = compDetail?.siret || '91820927100033';
+  const compEmail = compDetail?.email || 'contact@kdbauto.fr';
+  const compPhone = compDetail?.phone || '';
+
+  // Colors & Styles (Minimalist, modern, low-color, high-contrast slate theme)
+  const primaryColor = [15, 23, 42]; // Slate 900
+  const secondaryColor = [71, 85, 105]; // Slate 600
+  const lightGray = [148, 163, 184]; // Slate 400
+  const bgLight = [248, 250, 252]; // Slate 50
+  const borderLight = [226, 232, 240]; // Slate 200
+
+  // Load Logo image
+  const logoImg = await loadImage(compDetail?.logoUrl || '');
+
+  // Coordinates
+  let y = 15;
+  const topY = 15;
+  let compDetailsStartX = 15;
+
+  // --- HEADER SECTION ---
+  if (logoImg) {
+    const maxWidth = 25;
+    const maxHeight = 15;
+    let finalWidth = maxWidth;
+    let finalHeight = maxHeight;
+
+    if (logoImg.width && logoImg.height) {
+      const ratio = logoImg.width / logoImg.height;
+      if (ratio > maxWidth / maxHeight) {
+        finalWidth = maxWidth;
+        finalHeight = maxWidth / ratio;
+      } else {
+        finalHeight = maxHeight;
+        finalWidth = maxHeight * ratio;
+      }
+    }
+    
+    const logoY = topY + (maxHeight - finalHeight) / 2;
+    doc.addImage(logoImg, 'PNG', 15, logoY, finalWidth, finalHeight);
+
+    // Vertical divider
+    doc.setDrawColor(borderLight[0], borderLight[1], borderLight[2]);
+    doc.setLineWidth(0.35);
+    doc.line(44, topY, 44, topY + 15);
+
+    compDetailsStartX = 48;
+  }
+
+  // Draw Company Details
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text(compNameStr.toUpperCase(), compDetailsStartX, topY + 2);
+  
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  
+  let currentHeaderY = topY + 5.5;
+  const maxAddrWidth = logoImg ? 75 : 85;
+  const addrLines = doc.splitTextToSize(compAddress, maxAddrWidth);
+  addrLines.forEach((line: string) => {
+    doc.text(line, compDetailsStartX, currentHeaderY);
+    currentHeaderY += 3.2;
+  });
+  
+  doc.text(`SIRET : ${compSiret}`, compDetailsStartX, currentHeaderY);
+  currentHeaderY += 3.2;
+  doc.text(`Email : ${compEmail}`, compDetailsStartX, currentHeaderY);
+  if (compPhone) {
+    currentHeaderY += 3.2;
+    doc.text(`Tél : ${compPhone}`, compDetailsStartX, currentHeaderY);
+  }
+
+  // Top Right: Document Title & Metadata
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  const bdcTitle = config?.bdcTitle || "BON DE COMMANDE";
+  doc.text(bdcTitle, 195, topY + 2, { align: 'right' });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text(`N° BDC : ${sale.bdcNumber || 'N/A'}`, 195, topY + 8, { align: 'right' });
+  
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.2);
+  doc.text(`Date du BDC : ${bdcDateFormatted}`, 195, topY + 12.5, { align: 'right' });
+
+  // Horizontal divider line
+  y = Math.max(currentHeaderY + 4, topY + 18);
+  doc.setDrawColor(borderLight[0], borderLight[1], borderLight[2]);
+  doc.setLineWidth(0.4);
+  doc.line(15, y, 195, y);
+  y += 7;
+
+  // --- SECTION: CLIENT & COMMANDE INFO ---
+  doc.setFillColor(bgLight[0], bgLight[1], bgLight[2]);
+  doc.setDrawColor(borderLight[0], borderLight[1], borderLight[2]);
+  doc.roundedRect(15, y, 85, 38, 1, 1, 'FD');
+  doc.roundedRect(110, y, 85, 38, 1, 1, 'FD');
+
+  // Vendeur (Left)
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text("ÉMETTEUR / VENDEUR", 18, y + 5.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text(`Société : ${compNameStr}`, 18, y + 11);
+  doc.text(`Adresse : ${compAddress.slice(0, 42)}`, 18, y + 15.5);
+  if (compAddress.length > 42) {
+    doc.text(`${compAddress.slice(42, 84)}`, 18, y + 19.5);
+  }
+  doc.text(`SIRET : ${compSiret}`, 18, y + 23.5);
+  doc.text(`Commercial : ${sale.commercial || 'N/A'}`, 18, y + 27.5);
+
+  // Acheteur (Right)
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text("ACHETEUR / CLIENT", 113, y + 5.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text(`Client : ${sale.clientName || 'N/A'}`, 113, y + 11);
+  doc.text(`Tél : ${sale.phone || 'N/A'}`, 113, y + 15.5);
+  doc.text(`Email : ${sale.email || 'N/A'}`, 113, y + 19.5);
+  
+  const clientAddr = `${sale.address || ''} ${sale.zipCode || ''} ${sale.city || ''}`.trim();
+  doc.text(`Adresse : ${clientAddr ? clientAddr.slice(0, 42) : 'N/A'}`, 113, y + 23.5);
+  if (clientAddr.length > 42) {
+    doc.text(`${clientAddr.slice(42, 84)}`, 113, y + 27.5);
+  }
+
+  y += 45;
+
+  // --- VEHICLE SPECIFICATIONS BOX ---
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text("CARACTÉRISTIQUES DU VÉHICULE", 15, y);
+  y += 3.5;
+
+  doc.setFillColor(bgLight[0], bgLight[1], bgLight[2]);
+  doc.setDrawColor(borderLight[0], borderLight[1], borderLight[2]);
+  doc.roundedRect(15, y, 180, 42, 1, 1, 'FD');
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+
+  // Col 1
+  doc.text(`Marque :`, 18, y + 6);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text(`${sale.marque || 'N/A'}`, 48, y + 6);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text(`Modèle :`, 18, y + 12);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text(`${sale.modele || 'N/A'}`, 48, y + 12);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text(`VIN / Châssis :`, 18, y + 18);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text(`${sale.vin || 'N/A'}`, 48, y + 18);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text(`Immatriculation :`, 18, y + 24);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text(`${sale.plaque || 'N/A'}`, 48, y + 24);
+
+  // Col 2
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text(`Mise en Circulation :`, 110, y + 6);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text(`${sale.mec || 'N/A'}`, 145, y + 6);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text(`Mode de Vente :`, 110, y + 12);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text(`${(sale.saleMode || 'locale').toUpperCase()}`, 145, y + 12);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text(`Réf Interne :`, 110, y + 18);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text(`${sale.ref || 'N/A'}`, 145, y + 18);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text(`Couleur :`, 110, y + 24);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text(`${sale.color || 'N/A'}`, 145, y + 24);
+
+  // Row for extra info (Kms, Énergie, Garantie)
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text(`Kilométrage :`, 18, y + 32);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text(sale.kms ? `${sale.kms.toLocaleString('fr-FR')} km` : 'N/A', 38, y + 32);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text(`Énergie :`, 75, y + 32);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text(sale.energie || 'N/A', 90, y + 32);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  doc.text(`Garantie contractuelle :`, 120, y + 32);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text(sale.garantie || 'Garantie légale / Contrat', 154, y + 32);
+
+  y += 50;
+
+  // --- FINANCIAL INFORMATION TABLE ---
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text("DÉTAIL FINANCIER & RÈGLEMENT", 15, y);
+  y += 3.5;
+
+  const isLocale = sale.saleMode === 'locale';
+  const finRows: { label: string; value: string; isBold?: boolean }[] = [];
+  
+  if (isLocale) {
+    const rate = sale.tvaRate || 20;
+    const initialTtc = sale.initialPrice || sale.price;
+    const initialHt = initialTtc / (1 + rate / 100);
+    const tvaAmount = initialTtc - initialHt;
+    const discount = sale.discountAmount || 0;
+    const finalTtc = sale.price;
+
+    finRows.push({ label: "Prix Initial Hors Taxes (HT)", value: formatFrenchPrice(initialHt) });
+    finRows.push({ label: `TVA (${rate}%)`, value: formatFrenchPrice(tvaAmount) });
+    finRows.push({ label: "Prix Initial Toutes Taxes Comprises (TTC)", value: formatFrenchPrice(initialTtc) });
+    if (discount > 0) {
+      finRows.push({ label: "Remise Accordée", value: `-${formatFrenchPrice(discount)}` });
+    }
+    finRows.push({ label: "NET À PAYER (TTC)", value: formatFrenchPrice(finalTtc), isBold: true });
+  } else {
+    const initialHt = sale.initialPrice || sale.price;
+    const discount = sale.discountAmount || 0;
+    const finalHt = sale.price;
+
+    finRows.push({ label: "Prix de Vente Hors Taxes (HT)", value: formatFrenchPrice(initialHt) });
+    if (discount > 0) {
+      finRows.push({ label: "Remise Accordée (HT)", value: `-${formatFrenchPrice(discount)}` });
+    }
+    finRows.push({ label: "NET À PAYER (HT) (Hors TVA - Export / Marchand)", value: formatFrenchPrice(finalHt), isBold: true });
+  }
+
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(borderLight[0], borderLight[1], borderLight[2]);
+  
+  let rowY = y;
+  finRows.forEach((row, i) => {
+    if (row.isBold) {
+      doc.setFillColor(bgLight[0], bgLight[1], bgLight[2]);
+      doc.roundedRect(15, rowY, 180, 7.5, 0.5, 0.5, 'FD');
+    } else {
+      doc.setFillColor(255, 255, 255);
+      doc.rect(15, rowY, 180, 6.5, 'FD');
+      doc.setDrawColor(borderLight[0], borderLight[1], borderLight[2]);
+      doc.line(15, rowY + 6.5, 195, rowY + 6.5);
+    }
+
+    doc.setFont('helvetica', row.isBold ? 'bold' : 'normal');
+    doc.setFontSize(row.isBold ? 8.5 : 8);
+    doc.setTextColor(row.isBold ? primaryColor[0] : secondaryColor[0], row.isBold ? primaryColor[1] : secondaryColor[1], row.isBold ? primaryColor[2] : secondaryColor[2]);
+    doc.text(row.label, 18, rowY + (row.isBold ? 5 : 4.5));
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text(row.value, 192, rowY + (row.isBold ? 5 : 4.5), { align: 'right' });
+    
+    rowY += row.isBold ? 8 : 6.5;
+  });
+
+  y = rowY + 3;
+
+  // --- ACOMTES & SOLDE ---
+  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+  const remainder = sale.price - totalPaid;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text(`Total des acomptes reçus :`, 15, y);
+  doc.text(`${formatFrenchPrice(totalPaid)}`, 192, y, { align: 'right' });
+  
+  y += 5.5;
+  
+  doc.setFillColor(254, 243, 199); // Amber 100 bg
+  doc.roundedRect(15, y, 180, 8, 1, 1, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(146, 64, 14); // Amber 800
+  doc.text("RESTE À PAYER À LA LIVRAISON :", 18, y + 5.2);
+  doc.text(`${formatFrenchPrice(remainder)}`, 192, y + 5.2, { align: 'right' });
+
+  y += 15;
+
+  // --- SIGNATURES ---
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+  
+  doc.setDrawColor(borderLight[0], borderLight[1], borderLight[2]);
+  doc.roundedRect(15, y, 85, 23, 1, 1, 'D');
+  doc.text("SIGNATURE DU CLIENT", 18, y + 4.5);
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(6.5);
+  const clientSigMention = config?.bdcClientSigMention || 'Lu et approuvé';
+  doc.text(`(Précédée de la mention manuscrite '${clientSigMention}')`, 18, y + 8);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.roundedRect(110, y, 85, 23, 1, 1, 'D');
+  doc.text("SIGNATURE DU VENDEUR", 113, y + 4.5);
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(6.5);
+  doc.text("(Pour l'Entreprise & Cachet)", 113, y + 8);
+
+  // Footer metadata
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.5);
+  doc.setTextColor(lightGray[0], lightGray[1], lightGray[2]);
+  const bdcFooterText = config?.bdcFooterNote || `Document généré numériquement par ${compNameStr}. Fait à la date du ${bdcDateFormatted}.`;
+  doc.text(bdcFooterText, 105, 287, { align: 'center' });
+
+  // Standardized Nomenclature
+  const cleanClient = sanitizeFilename(sale.clientName || 'CLIENT_INCONNU');
+  const cleanBrand = sanitizeFilename(sale.marque || 'VEHICULE');
+  const cleanModel = sanitizeFilename(sale.modele || 'SANS_MODELE');
+  const cleanDate = sale.date ? sale.date.replace(/-/g, '_') : 'SANS_DATE';
+  const fileName = `BON_DE_COMMANDE_${sale.bdcNumber || sale.id}_${cleanClient}_${cleanBrand}_${cleanModel}_${cleanDate}.pdf`;
 
   doc.save(fileName);
 }
