@@ -13,6 +13,25 @@ export interface Payment {
   encaissementDate?: string; // Date d'encaissement effective
   amount: number;
   addedBy?: string; // Nom de l'utilisateur qui l'a ajouté
+  proofId?: string;
+  proofFileData?: string;
+  proofFileType?: string;
+  proofFileName?: string;
+}
+
+export interface PaymentProof {
+  id: string;
+  amount: number;
+  senderName: string;
+  date: string;
+  uploadDate: string;
+  fileData: string; // base64 representation of jpeg/pdf
+  fileName: string;
+  fileType: string;
+  status: 'pending' | 'validated' | 'rejected';
+  rejectionReason?: string;
+  validatedBy?: string;
+  validatedAt?: string;
 }
 
 export interface DeliveryLogEntry {
@@ -44,6 +63,10 @@ export interface Sale {
   ref: string;
   refPhone?: string;
   refEmail?: string;
+  refAddress?: string;
+  refZipCode?: string;
+  refCity?: string;
+  refNotes?: string;
   notes?: Note[];
   welcomeEmailSent?: boolean;
   
@@ -72,6 +95,7 @@ export interface Sale {
   deliverySlot?: string; // ex: "10:00 - 11:00"
   deliveryStatus?: 'non_programmee' | 'programmee' | 'livre' | 'annule';
   deliveryLog?: DeliveryLogEntry[];
+  pendingProofs?: PaymentProof[];
 }
 
 export interface CompanyDetails {
@@ -174,6 +198,8 @@ export interface Vehicle {
   defauts?: string;
   defautPoints?: { x: number; y: number; comment: string }[];
   documents?: VehicleDocument[];
+  fournisseur?: string;
+  paysProvenance?: string;
 
   // Status
   status: 'PARC' | 'ARRIVAGE' | 'EN_COURS' | 'EN_REPARATION' | 'VENDU';
@@ -202,4 +228,10 @@ export interface Client {
   notes?: string;
   documents?: ClientDocument[];
   createdAt?: string;
+  type?: 'client' | 'intermediaire' | 'fournisseur';
+  supplierActivity?: string;
+  supplierSiret?: string;
+  supplierContactName?: string;
+  supplierIban?: string;
+  supplierVisibilityShared?: boolean;
 }

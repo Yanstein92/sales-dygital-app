@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Loader2, CheckCircle2, LogOut, Users, Edit2, Check, KeyRound, LayoutDashboard, Car, ShieldCheck, Activity, Menu, X, Trash2, TrendingUp, Calendar as CalendarIcon, Clock, Search, Bell, ChevronDown, Globe, FileText, MessageSquare } from 'lucide-react';
+import { Loader2, CheckCircle2, LogOut, Users, Edit2, Check, KeyRound, LayoutDashboard, Car, ShieldCheck, Activity, Menu, X, Trash2, TrendingUp, Calendar as CalendarIcon, Clock, Search, Bell, ChevronDown, Globe, FileText, MessageSquare, MoreHorizontal } from 'lucide-react';
 import { AppProvider, useApp } from './lib/context';
 import { auth, signOut, db, doc, setDoc, getUserDocPath, getUserPath, collection, onSnapshot } from './lib/firebase';
 import { CustomLogo } from './components/CustomLogo';
@@ -13,6 +13,7 @@ import { CompanyManagement } from './components/CompanyManagement';
 import { AdminPerformanceDashboard } from './components/AdminPerformanceDashboard';
 import { DeliveryCalendar } from './components/DeliveryCalendar';
 import { ClientBooking } from './components/ClientBooking';
+import { ClientPaymentProof } from './components/ClientPaymentProof';
 import { MyAccount } from './components/MyAccount';
 import { NotificationsView, Notification } from './components/NotificationsView';
 import { StockView } from './components/StockView';
@@ -199,7 +200,7 @@ const processPDFFile = async (
 const MainAppContent: React.FC = () => {
   const { 
     userAuth, userProfile, isDbLoading, sales, teamMembers, payments, databaseUid,
-    vehicles, clients, setSelectedClientId, setSelectedVehicleId 
+    vehicles, clients, setSelectedClientId, setSelectedVehicleId, logisticsDocs
   } = useApp();
   
   const [currentView, setCurrentView] = useState('dashboard');
@@ -217,6 +218,7 @@ const MainAppContent: React.FC = () => {
     'dashboard', 'delivery_calendar', 'stock', 'clients', 'chat', 'perf_dashboard'
   ]);
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
+  const [isSidebarEditMode, setIsSidebarEditMode] = useState(false);
 
   // Load custom sidebar order on mount
   useEffect(() => {
@@ -235,11 +237,13 @@ const MainAppContent: React.FC = () => {
   }, []);
 
   const handleDragStart = (idx: number) => {
+    if (!isSidebarEditMode) return;
     setDraggedIdx(idx);
   };
 
   const handleDragOver = (e: React.DragEvent, idx: number) => {
     e.preventDefault();
+    if (!isSidebarEditMode) return;
     if (draggedIdx === null || draggedIdx === idx) return;
 
     const newOrder = [...sidebarOrder];
@@ -255,6 +259,124 @@ const MainAppContent: React.FC = () => {
     localStorage.setItem('sidebar_custom_order', JSON.stringify(sidebarOrder));
   };
 
+  // Compute merged clients (including manual ones, buyers, and intermédiaires/references from Sales)
+  const mergedClientsForSearch = useMemo(() => {
+    const clientMap = new Map<string, any>();
+
+    // 1. Process explicit clients from Firestore
+    clients.forEach(c => {
+      const key = 'manual::' + String(c.id || '').trim().toLowerCase();
+      clientMap.set(key, {
+        id: c.id,
+        name: c.name,
+        phone: c.phone || '',
+        email: c.email || '',
+        address: c.address || '',
+        zipCode: c.zipCode || '',
+        city: c.city || '',
+        notes: c.notes || '',
+        isManual: true,
+        type: (c as any).type || 'client',
+        purchases: [] as Sale[],
+        totalSpent: 0,
+      });
+    });
+
+    // 2. Process clients from Sales
+    sales.forEach(s => {
+      const name = String(s.clientName || '').trim();
+      if (name) {
+        const clientKey = 'sale_client::' + name.toLowerCase();
+        if (clientMap.has(clientKey)) {
+          const existing = clientMap.get(clientKey);
+          if (!existing.phone && s.phone) existing.phone = s.phone;
+          if (!existing.email && s.email) existing.email = s.email;
+          if (!existing.address && s.address) existing.address = s.address;
+          if (!existing.zipCode && s.zipCode) existing.zipCode = s.zipCode;
+          if (!existing.city && s.city) existing.city = s.city;
+          existing.purchases.push(s);
+          if (s.factureStatus !== 'rembourse') {
+            existing.totalSpent += s.price || 0;
+          }
+        } else {
+          clientMap.set(clientKey, {
+            id: `sale-client-${s.id}`,
+            name: name,
+            phone: s.phone || '',
+            email: s.email || '',
+            address: s.address || '',
+            zipCode: s.zipCode || '',
+            city: s.city || '',
+            notes: '',
+            isManual: false,
+            type: 'client',
+            purchases: [s],
+            totalSpent: s.factureStatus !== 'rembourse' ? (s.price || 0) : 0,
+          });
+        }
+      }
+
+      // Intermediary / Reference contact
+      const refName = String(s.ref || '').trim();
+      if (refName && refName !== '-' && refName.toLowerCase() !== 'aucun' && refName.toLowerCase() !== 'none') {
+        const refKey = 'sale_ref::' + refName.toLowerCase();
+        if (clientMap.has(refKey)) {
+          const existing = clientMap.get(refKey);
+          existing.purchases.push(s);
+          if (s.factureStatus !== 'rembourse') {
+            existing.totalSpent += s.price || 0;
+          }
+          if (!existing.phone && s.refPhone) existing.phone = s.refPhone;
+          if (!existing.email && s.refEmail) existing.email = s.refEmail;
+        } else {
+          clientMap.set(refKey, {
+            id: `sale-ref-${s.id}`,
+            name: refName,
+            phone: s.refPhone || '',
+            email: s.refEmail || '',
+            address: '',
+            zipCode: '',
+            city: '',
+            notes: '',
+            isManual: false,
+            type: 'intermediaire',
+            purchases: [s],
+            totalSpent: s.factureStatus !== 'rembourse' ? (s.price || 0) : 0,
+          });
+        }
+      }
+    });
+
+    const finalMap = new Map<string, any>();
+    clientMap.forEach((c) => {
+      const matchKey = `${c.type}::${c.name.trim().toLowerCase()}`;
+      if (finalMap.has(matchKey)) {
+        const existing = finalMap.get(matchKey);
+        if (c.isManual) {
+          const purchases = [...existing.purchases, ...c.purchases];
+          const totalSpent = existing.totalSpent + c.totalSpent;
+          finalMap.set(matchKey, {
+            ...c,
+            purchases,
+            totalSpent
+          });
+        } else {
+          existing.purchases = [...existing.purchases, ...c.purchases];
+          existing.totalSpent += c.totalSpent;
+          if (!existing.phone && c.phone) existing.phone = c.phone;
+          if (!existing.email && c.email) existing.email = c.email;
+          if (!existing.address && c.address) existing.address = c.address;
+          if (!existing.zipCode && c.zipCode) existing.zipCode = c.zipCode;
+          if (!existing.city && c.city) existing.city = c.city;
+        }
+      } else {
+        finalMap.set(matchKey, c);
+      }
+    });
+
+    return Array.from(finalMap.values());
+  }, [sales, clients]);
+
   // Header Global Search results computation
   const [headerSearchQuery, setHeaderSearchQuery] = useState('');
   const headerSearchResults = useMemo(() => {
@@ -264,8 +386,9 @@ const MainAppContent: React.FC = () => {
     const results = {
       sales: [] as typeof sales,
       vehicles: [] as typeof vehicles,
-      clients: [] as typeof clients,
-      deliveries: [] as typeof sales
+      clients: [] as any[],
+      deliveries: [] as typeof sales,
+      logistics: [] as any[]
     };
 
     sales.forEach(s => {
@@ -302,7 +425,7 @@ const MainAppContent: React.FC = () => {
       }
     });
 
-    clients.forEach(c => {
+    mergedClientsForSearch.forEach(c => {
       const match = 
         c.name?.toLowerCase().includes(q) ||
         c.phone?.toLowerCase().includes(q) ||
@@ -315,8 +438,27 @@ const MainAppContent: React.FC = () => {
       }
     });
 
+    if (logisticsDocs && logisticsDocs.length > 0) {
+      logisticsDocs.forEach(d => {
+        const match = 
+          d.reference?.toLowerCase().includes(q) ||
+          d.carrierName?.toLowerCase().includes(q) ||
+          d.type?.toLowerCase().includes(q) ||
+          d.linkedVehicles?.some((lv: any) => 
+            lv.marque?.toLowerCase().includes(q) || 
+            lv.modele?.toLowerCase().includes(q) || 
+            lv.vin?.toLowerCase().includes(q) ||
+            lv.immatriculation?.toLowerCase().includes(q)
+          );
+        
+        if (match) {
+          results.logistics.push(d);
+        }
+      });
+    }
+
     return results;
-  }, [headerSearchQuery, sales, vehicles, clients]);
+  }, [headerSearchQuery, sales, vehicles, mergedClientsForSearch, logisticsDocs]);
 
   // Floating Chat message notification toasts & Dual-tone Synthesizer Audio chime
   const [chatToasts, setChatToasts] = useState<Array<{ id: string, senderName: string, text: string, sessionName: string, sessionId: string }>>([]);
@@ -527,6 +669,10 @@ const MainAppContent: React.FC = () => {
         const id = hash.replace('#detail/', '');
         setSelectedSaleId(id);
         setCurrentView('detail');
+      } else if (hash.startsWith('#client/')) {
+        setCurrentView('clients');
+      } else if (hash.startsWith('#vehicle/')) {
+        setCurrentView('stock');
       } else if (hash === '#pdf_validation') {
         setCurrentView('pdf_validation');
       } else if (hash.startsWith('#delivery_calendar')) {
@@ -555,6 +701,8 @@ const MainAppContent: React.FC = () => {
         setCurrentView('stock');
       } else if (hash === '#clients') {
         setCurrentView('clients');
+      } else if (hash === '#chat') {
+        setCurrentView('chat');
       } else {
         setSelectedSaleId(null);
         setCurrentView('dashboard');
@@ -822,13 +970,13 @@ const MainAppContent: React.FC = () => {
                 hashValue = 'delivery_calendar';
               } else if (id === 'stock') {
                 IconComp = Car;
-                label = 'Stock';
-                tooltip = 'Stock Véhicules';
+                label = 'Véhicules';
+                tooltip = 'Véhicules';
                 hashValue = 'stock';
               } else if (id === 'clients') {
                 IconComp = Users;
-                label = 'Clients';
-                tooltip = 'Annuaire Clients';
+                label = 'Contacts';
+                tooltip = 'Annuaire Contacts';
                 hashValue = 'clients';
               } else if (id === 'chat') {
                 IconComp = MessageSquare;
@@ -848,12 +996,16 @@ const MainAppContent: React.FC = () => {
               return (
                 <button 
                   key={id}
-                  draggable="true"
+                  draggable={isSidebarEditMode ? "true" : "false"}
                   onDragStart={() => handleDragStart(index)}
                   onDragOver={(e) => handleDragOver(e, index)}
                   onDragEnd={handleDragEnd}
                   onClick={() => { window.location.hash = hashValue; }}
-                  className={`p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative cursor-grab active:cursor-grabbing ${
+                  className={`p-2.5 rounded-xl flex flex-col items-center justify-center gap-1 w-full transition-all group relative ${
+                    isSidebarEditMode 
+                      ? 'border border-dashed border-amber-500/50 bg-amber-500/5 animate-pulse cursor-grab active:cursor-grabbing hover:bg-amber-500/10' 
+                      : 'cursor-pointer'
+                  } ${
                     isActive 
                       ? activeColor 
                       : 'text-slate-400 hover:text-white hover:bg-slate-900/80'
@@ -875,7 +1027,25 @@ const MainAppContent: React.FC = () => {
           </nav>
         </div>
 
-        {/* Bottom part of sidebar is now empty as logout is handled via the profile menu */}
+        {/* Bottom part of sidebar has toggle to customize layout order safely */}
+        <div className="flex flex-col items-center gap-4 w-full">
+          <div className="h-px w-8 bg-slate-800"></div>
+          
+          <button
+            onClick={() => setIsSidebarEditMode(!isSidebarEditMode)}
+            className={`p-2.5 rounded-xl transition-all relative group ${
+              isSidebarEditMode 
+                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-bounce' 
+                : 'text-slate-500 hover:text-white hover:bg-slate-900/80'
+            }`}
+            title="Réorganiser la barre latérale"
+          >
+            <MoreHorizontal size={18} />
+            <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+              {isSidebarEditMode ? "Terminer la réorganisation" : "Réorganiser le menu"}
+            </div>
+          </button>
+        </div>
       </aside>
 
       {/* MAIN CONTAINER next to Sidebar */}
@@ -889,7 +1059,7 @@ const MainAppContent: React.FC = () => {
                 <span>Sales Dygital</span>
                 <span className="text-slate-300">/</span>
                 <span className="text-slate-600 font-black">
-                  {currentView === 'dashboard' ? 'Bons de commande' : currentView === 'detail' ? 'Détails du dossier' : currentView === 'delivery_calendar' ? 'Calendrier des sorties' : currentView === 'my_account' ? 'Mon Compte' : currentView === 'pdf_templates' ? 'Éditer modèles PDF' : currentView === 'notifications' ? 'Notifications' : currentView === 'clients' ? 'Clients' : currentView === 'perf_dashboard' ? 'Statistiques' : currentView === 'stock' ? 'Stock' : currentView === 'team_management' ? 'Équipe' : currentView === 'company_management' ? 'Gestion Entreprise' : 'Validation' }
+                  {currentView === 'dashboard' ? 'Bons de commande' : currentView === 'detail' ? 'Détails du dossier' : currentView === 'delivery_calendar' ? 'Calendrier des sorties' : currentView === 'my_account' ? 'Mon Compte' : currentView === 'pdf_templates' ? 'Éditer modèles PDF' : currentView === 'notifications' ? 'Notifications' : currentView === 'clients' ? 'Contacts' : currentView === 'perf_dashboard' ? 'Statistiques' : currentView === 'stock' ? 'Véhicules' : currentView === 'team_management' ? 'Équipe' : currentView === 'company_management' ? 'Gestion Entreprise' : 'Validation' }
                 </span>
               </div>
               <div className="flex items-center gap-2 group mt-0.5">
@@ -937,7 +1107,7 @@ const MainAppContent: React.FC = () => {
                   setSearchQuery(e.target.value);
                 }}
                 className="block w-full pl-10 pr-10 py-2.5 border border-slate-200 bg-slate-50 hover:bg-slate-100/50 focus:bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600/80 rounded-full text-xs font-semibold transition-all"
-                placeholder="Dossier, véhicule, client, livraison..."
+                placeholder="Dossier, véhicule, contact, livraison..."
               />
               {headerSearchQuery && (
                 <button
@@ -960,7 +1130,8 @@ const MainAppContent: React.FC = () => {
                     {headerSearchResults.sales.length === 0 &&
                      headerSearchResults.vehicles.length === 0 &&
                      headerSearchResults.clients.length === 0 &&
-                     headerSearchResults.deliveries.length === 0 && (
+                     headerSearchResults.deliveries.length === 0 &&
+                     (!headerSearchResults.logistics || headerSearchResults.logistics.length === 0) && (
                       <div className="text-center py-6 text-slate-400 text-xs font-bold">
                         Aucun résultat pour "{headerSearchQuery}"
                       </div>
@@ -1025,11 +1196,11 @@ const MainAppContent: React.FC = () => {
                       </div>
                     )}
 
-                    {/* 3. Clients */}
+                    {/* 3. Contacts */}
                     {headerSearchResults.clients.length > 0 && (
                       <div className="border-t border-slate-100 pt-3">
                         <p className="text-[10px] uppercase font-black text-slate-400 tracking-wider mb-1.5 flex items-center gap-1.5 px-1">
-                          <span>👥</span> Clients ({headerSearchResults.clients.length})
+                          <span>👥</span> Contacts ({headerSearchResults.clients.length})
                         </p>
                         <div className="flex flex-col gap-1">
                           {headerSearchResults.clients.slice(0, 4).map(c => (
@@ -1037,8 +1208,7 @@ const MainAppContent: React.FC = () => {
                               key={c.id}
                               onClick={() => {
                                 setHeaderSearchQuery('');
-                                setSelectedClientId(c.id);
-                                window.location.hash = 'clients';
+                                window.location.hash = `client/${c.id}`;
                               }}
                               className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-xl cursor-pointer border border-transparent hover:border-slate-100 transition-all text-xs font-semibold text-slate-700"
                             >
@@ -1077,6 +1247,38 @@ const MainAppContent: React.FC = () => {
                               </div>
                               <span className="shrink-0 text-[10px] bg-purple-50 text-purple-600 font-black px-2 py-0.5 rounded-md">
                                 {d.deliverySlot || 'Journée'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 5. Documents Logistiques (CMR/BL) */}
+                    {headerSearchResults.logistics && headerSearchResults.logistics.length > 0 && (
+                      <div className="border-t border-slate-100 pt-3">
+                        <p className="text-[10px] uppercase font-black text-slate-400 tracking-wider mb-1.5 flex items-center gap-1.5 px-1">
+                          <span>📋</span> Documents Logistiques ({headerSearchResults.logistics.length})
+                        </p>
+                        <div className="flex flex-col gap-1">
+                          {headerSearchResults.logistics.slice(0, 4).map(doc => (
+                            <div
+                              key={doc.id}
+                              onClick={() => {
+                                setHeaderSearchQuery('');
+                                localStorage.setItem('stock_subtab', 'logistique');
+                                window.location.hash = 'stock';
+                              }}
+                              className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-xl cursor-pointer border border-transparent hover:border-slate-100 transition-all text-xs font-semibold text-slate-700"
+                            >
+                              <div className="truncate pr-2">
+                                <p className="font-bold text-slate-800 truncate">Réf: {doc.reference}</p>
+                                <p className="text-[10px] text-slate-400 truncate">
+                                  {doc.type === 'CMR' ? 'CMR' : 'BL'} • {doc.carrierName} • {doc.linkedVehicles?.length || 0} véhicule(s)
+                                </p>
+                              </div>
+                              <span className="shrink-0 text-[10px] uppercase font-black px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600">
+                                Logistique
                               </span>
                             </div>
                           ))}
@@ -1573,6 +1775,7 @@ const MainAppContent: React.FC = () => {
 
 export default function App() {
   const [bookingId, setBookingId] = useState<string | null>(null);
+  const [virementId, setVirementId] = useState<string | null>(null);
 
   useEffect(() => {
     const checkHash = () => {
@@ -1580,6 +1783,11 @@ export default function App() {
         setBookingId(window.location.hash.split('#reserve/')[1]);
       } else {
         setBookingId(null);
+      }
+      if (window.location.hash.startsWith('#virement/')) {
+        setVirementId(window.location.hash.split('#virement/')[1]);
+      } else {
+        setVirementId(null);
       }
     };
     checkHash();
@@ -1589,6 +1797,10 @@ export default function App() {
 
   if (bookingId) {
     return <ClientBooking saleId={bookingId} onShowToast={(m, t) => console.log(m, t)} />;
+  }
+
+  if (virementId) {
+    return <ClientPaymentProof saleId={virementId} onShowToast={(m, t) => console.log(m, t)} />;
   }
 
   return (

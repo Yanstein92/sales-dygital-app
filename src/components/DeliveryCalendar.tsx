@@ -18,6 +18,8 @@ interface DeliveryConfig {
   blockedPeriods?: { from: string; to: string; reason?: string }[];
   reminderDaysBefore?: number;
   minDaysBeforeBooking?: number;
+  workStartHour?: string;
+  workEndHour?: string;
 }
 
 export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast }) => {
@@ -92,7 +94,9 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
             maxDeliveriesPerDay: data.maxDeliveriesPerDay || 4,
             blockedPeriods: data.blockedPeriods || [],
             reminderDaysBefore: data.reminderDaysBefore ?? 1,
-            minDaysBeforeBooking: data.minDaysBeforeBooking ?? 0
+            minDaysBeforeBooking: data.minDaysBeforeBooking ?? 0,
+            workStartHour: data.workStartHour || "08:00",
+            workEndHour: data.workEndHour || "18:00"
           });
         } else {
           // Initialize first default config
@@ -1393,6 +1397,40 @@ export const DeliveryCalendar: React.FC<DeliveryCalendarProps> = ({ onShowToast 
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            <hr className="border-slate-100" />
+
+            {/* Working Hours Manager */}
+            <div>
+              <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
+                <Clock className="text-blue-600" size={18} />
+                Horaires de travail (pour délais de virement)
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">Saisissez les heures de début et de fin de travail de votre entreprise.</p>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-600 block mb-1">Heure de début de journée</label>
+                  <input 
+                    type="text"
+                    placeholder="ex: 08:00"
+                    value={config.workStartHour || "08:00"}
+                    onChange={(e) => saveConfig({ ...config, workStartHour: e.target.value })}
+                    className="w-full max-w-xs bg-white border border-slate-200 rounded-lg p-2.5 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-600 block mb-1">Heure de fin de journée</label>
+                  <input 
+                    type="text"
+                    placeholder="ex: 18:00"
+                    value={config.workEndHour || "18:00"}
+                    onChange={(e) => saveConfig({ ...config, workEndHour: e.target.value })}
+                    className="w-full max-w-xs bg-white border border-slate-200 rounded-lg p-2.5 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700"
+                  />
+                </div>
               </div>
             </div>
 

@@ -3,7 +3,7 @@ import {
   Users, Search, Plus, Phone, Mail, MapPin, Car, FileText, 
   Trash2, Edit3, X, Check, ArrowUpDown, ChevronRight, 
   Calendar, Briefcase, ChevronDown, MessageSquare, Grid, List, Shield, HelpCircle, Star,
-  Upload, Download, Eye, Loader2
+  Upload, Download, Eye, Loader2, ArrowLeft
 } from 'lucide-react';
 import { useApp } from '../lib/context';
 import { db, doc, setDoc, deleteDoc, getUserPath } from '../lib/firebase';
@@ -127,7 +127,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
   
   // View options state
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
-  const [filterType, setFilterType] = useState<'all' | 'client' | 'intermediaire'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'client' | 'intermediaire' | 'fournisseur'>('all');
 
   // Client Form State
   const [formName, setFormName] = useState('');
@@ -137,7 +137,14 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
   const [formZipCode, setFormZipCode] = useState('');
   const [formCity, setFormCity] = useState('');
   const [formNotes, setFormNotes] = useState('');
-  const [formType, setFormType] = useState<'client' | 'intermediaire'>('client');
+  const [formType, setFormType] = useState<'client' | 'intermediaire' | 'fournisseur'>('client');
+
+  // Supplier Custom Form State
+  const [formSupplierActivity, setFormSupplierActivity] = useState('');
+  const [formSupplierSiret, setFormSupplierSiret] = useState('');
+  const [formSupplierContactName, setFormSupplierContactName] = useState('');
+  const [formSupplierIban, setFormSupplierIban] = useState('');
+  const [formSupplierVisibilityShared, setFormSupplierVisibilityShared] = useState(false);
 
   // Merge Firestore clients and clients/intermediaries auto-extracted from Sales
   const mergedClients = useMemo(() => {
@@ -160,6 +167,11 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
         documents: (c as any).documents || [],
         purchases: [] as Sale[],
         totalSpent: 0,
+        supplierActivity: (c as any).supplierActivity || '',
+        supplierSiret: (c as any).supplierSiret || '',
+        supplierContactName: (c as any).supplierContactName || '',
+        supplierIban: (c as any).supplierIban || '',
+        supplierVisibilityShared: (c as any).supplierVisibilityShared || false,
       });
     });
 
@@ -167,6 +179,8 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
     sales.forEach(s => {
       // End buyer / Owner
       const name = String(s.clientName || '').trim();
+      const isRefunded = s.factureStatus === 'rembourse';
+      
       if (name) {
         const clientKey = 'sale_client::' + name.toLowerCase();
         if (clientMap.has(clientKey)) {
@@ -177,7 +191,9 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
           if (!existing.zipCode && s.zipCode) existing.zipCode = s.zipCode;
           if (!existing.city && s.city) existing.city = s.city;
           existing.purchases.push(s);
-          existing.totalSpent += s.price || 0;
+          if (!isRefunded) {
+            existing.totalSpent += s.price || 0;
+          }
         } else {
           clientMap.set(clientKey, {
             id: `sale-client-${s.id}`,
@@ -191,7 +207,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
             isManual: false,
             type: 'client',
             purchases: [s],
-            totalSpent: s.price || 0,
+            totalSpent: !isRefunded ? (s.price || 0) : 0,
           });
         }
       }
@@ -203,7 +219,9 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
         if (clientMap.has(refKey)) {
           const existing = clientMap.get(refKey);
           existing.purchases.push(s);
-          existing.totalSpent += s.price || 0;
+          if (!isRefunded) {
+            existing.totalSpent += s.price || 0;
+          }
           if (!existing.phone && s.refPhone) existing.phone = s.refPhone;
           if (!existing.email && s.refEmail) existing.email = s.refEmail;
         } else {
@@ -219,7 +237,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
             isManual: false,
             type: 'intermediaire',
             purchases: [s],
-            totalSpent: s.price || 0,
+            totalSpent: !isRefunded ? (s.price || 0) : 0,
           });
         }
       }
@@ -263,17 +281,36 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
     if (selectedClientId && mergedClients.length > 0) {
       const found = mergedClients.find(c => c.id === selectedClientId);
       if (found) {
-        setSelectedClient(found);
+        window.location.hash = `client/${found.id}`;
         setSelectedClientId(null);
       }
     }
   }, [selectedClientId, mergedClients, setSelectedClientId]);
 
+  const [activeClientId, setActiveClientId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleHashCheck = () => {
+      const hash = window.location.hash;
+      if (hash.startsWith('#client/')) {
+        const id = hash.replace('#client/', '');
+        setActiveClientId(id);
+      } else {
+        setActiveClientId(null);
+      }
+    };
+
+    handleHashCheck();
+    window.addEventListener('hashchange', handleHashCheck);
+    return () => window.removeEventListener('hashchange', handleHashCheck);
+  }, []);
+
   // Derive up-to-date client details including real-time updated documents list
   const activeClientDetails = useMemo(() => {
-    if (!selectedClient) return null;
-    return mergedClients.find(c => c.name.trim().toLowerCase() === selectedClient.name.trim().toLowerCase() && c.type === selectedClient.type) || selectedClient;
-  }, [selectedClient, mergedClients]);
+    const id = activeClientId || (selectedClient ? selectedClient.id : null);
+    if (!id) return null;
+    return mergedClients.find(c => c.id === id) || selectedClient;
+  }, [activeClientId, selectedClient, mergedClients]);
 
   // Sort by purchase frequency (number of purchases) descending by default, then alphabetically
   const sortedClients = useMemo(() => {
@@ -300,6 +337,15 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
   const filteredClients = useMemo(() => {
     let list = sortedClients;
     
+    // Role-based visibility check for suppliers (Fournisseurs)
+    const isAdmin = userProfile?.role === 'admin';
+    list = list.filter(c => {
+      if (c.type === 'fournisseur') {
+        return isAdmin || c.supplierVisibilityShared === true;
+      }
+      return true;
+    });
+
     if (filterType !== 'all') {
       list = list.filter(c => c.type === filterType);
     }
@@ -317,13 +363,13 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
       );
       return nameMatch || emailMatch || phoneMatch || cityMatch || carMatch;
     });
-  }, [sortedClients, searchQuery, filterType]);
+  }, [sortedClients, searchQuery, filterType, userProfile]);
 
   // Stats
   const stats = useMemo(() => {
     const totalClients = mergedClients.filter(c => c.type === 'client').length;
     const totalIntermediaries = mergedClients.filter(c => c.type === 'intermediaire').length;
-    const totalPurchases = sales.length;
+    const totalPurchases = sales.filter(s => s.factureStatus !== 'rembourse').length;
     return { totalClients, totalIntermediaries, totalPurchases };
   }, [mergedClients, sales]);
 
@@ -336,6 +382,11 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
     setFormCity('');
     setFormNotes('');
     setFormType('client');
+    setFormSupplierActivity('');
+    setFormSupplierSiret('');
+    setFormSupplierContactName('');
+    setFormSupplierIban('');
+    setFormSupplierVisibilityShared(false);
     setShowAddModal(true);
   };
 
@@ -367,6 +418,14 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
         createdAt: isEditing ? (selectedClient?.createdAt || new Date().toISOString()) : new Date().toISOString(),
       };
 
+      if (formType === 'fournisseur') {
+        newClientData.supplierActivity = formSupplierActivity.trim();
+        newClientData.supplierSiret = formSupplierSiret.trim();
+        newClientData.supplierContactName = formSupplierContactName.trim();
+        newClientData.supplierIban = formSupplierIban.trim();
+        newClientData.supplierVisibilityShared = formSupplierVisibilityShared;
+      }
+
       await setDoc(clientPath, newClientData);
       onShowToast(isEditing ? "Contact mis à jour !" : "Contact enregistré avec succès !", "success");
       
@@ -380,6 +439,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
   };
 
   const handleEditClient = (client: any) => {
+    setSelectedClient(client);
     setFormName(client.name);
     setFormPhone(client.phone);
     setFormEmail(client.email);
@@ -388,6 +448,11 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
     setFormCity(client.city);
     setFormNotes(client.notes);
     setFormType(client.type || 'client');
+    setFormSupplierActivity(client.supplierActivity || '');
+    setFormSupplierSiret(client.supplierSiret || '');
+    setFormSupplierContactName(client.supplierContactName || '');
+    setFormSupplierIban(client.supplierIban || '');
+    setFormSupplierVisibilityShared(client.supplierVisibilityShared || false);
     setIsEditing(true);
     setShowAddModal(true);
   };
@@ -490,6 +555,374 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
     );
   };
 
+  if (activeClientId && activeClientDetails) {
+    return (
+      <div className="space-y-6 animate-fade-in-up">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden select-none">
+          <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-10 bg-[radial-gradient(circle_at_top_right,var(--color-indigo-400),transparent_50%)] pointer-events-none" />
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 text-indigo-400 text-xs font-black uppercase tracking-widest mb-1.5">
+                <Users size={14} /> Fiche Contact Détaillée
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white flex items-center gap-2">
+                  {activeClientDetails.name}
+                </h1>
+                {renderRankBadge(activeClientDetails)}
+              </div>
+              <p className="text-slate-300 text-xs font-bold mt-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full ${activeClientDetails.isManual ? 'bg-amber-400' : 'bg-indigo-500'}`} />
+                {activeClientDetails.isManual ? 'Fiche Renseignée Manuellement' : 'Contact Dossier Actif'}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => handleEditClient(activeClientDetails)}
+                className="flex items-center gap-1.5 text-xs font-black bg-white/10 hover:bg-white/20 text-white border border-white/10 px-4 py-2.5 rounded-xl cursor-pointer transition-all"
+              >
+                <Edit3 size={14} /> Modifier la fiche
+              </button>
+              {activeClientDetails.isManual && (
+                <button 
+                  onClick={() => {
+                    handleDeleteClient(activeClientDetails.id);
+                    window.location.hash = 'clients';
+                  }}
+                  className="flex items-center gap-1.5 text-xs font-black bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 px-4 py-2.5 rounded-xl cursor-pointer transition-all"
+                >
+                  <Trash2 size={14} /> Supprimer
+                </button>
+              )}
+              <button 
+                onClick={() => { window.location.hash = 'clients'; }}
+                title="Retourner à l'annuaire"
+                className="flex items-center justify-center p-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl cursor-pointer transition-all shrink-0"
+              >
+                <ArrowLeft size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 2-Column Bento Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column - Details, Docs, Notes */}
+          <div className="space-y-6">
+            
+            {/* Contact Details */}
+            <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-xs">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
+                <Briefcase size={14} /> Coordonnées & Adresse
+              </h3>
+              
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-lg bg-slate-50 text-slate-500">
+                    <Phone size={16} />
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-400 font-bold uppercase">Téléphone</div>
+                    <div className="text-sm font-bold text-slate-800">{activeClientDetails.phone || 'Non renseigné'}</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-lg bg-slate-50 text-slate-500">
+                    <Mail size={16} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase">Email</div>
+                    <div className="text-sm font-bold text-slate-800 truncate">{activeClientDetails.email || 'Non renseigné'}</div>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 mt-2 pt-4 border-t border-slate-100">
+                  <div className="p-2.5 rounded-lg bg-slate-50 text-slate-500">
+                    <MapPin size={16} />
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-400 font-bold uppercase">Adresse postale</div>
+                    <div className="text-sm font-bold text-slate-800">
+                      {activeClientDetails.address ? (
+                        <>
+                          {activeClientDetails.address}
+                          <br />
+                          {activeClientDetails.zipCode} {activeClientDetails.city}
+                        </>
+                      ) : 'Aucune adresse renseignée'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {activeClientDetails.type === 'fournisseur' && (
+              <div className="bg-emerald-50/40 rounded-2xl p-6 border border-emerald-100 shadow-xs space-y-4">
+                <h3 className="text-xs font-black uppercase tracking-wider text-emerald-800 flex items-center gap-2">
+                  🚚 Spécificités Fournisseur
+                </h3>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-[10px] text-emerald-600/80 font-bold uppercase mb-0.5">Secteur d'activité</div>
+                    <div className="text-sm font-bold text-slate-800">
+                      {activeClientDetails.supplierActivity || <span className="text-slate-400 italic font-medium">Non renseigné</span>}
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <div className="text-[10px] text-emerald-600/80 font-bold uppercase mb-0.5">Numéro SIRET</div>
+                    <div className="text-sm font-bold text-slate-800">
+                      {activeClientDetails.supplierSiret || <span className="text-slate-400 italic font-medium">Non renseigné</span>}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[10px] text-emerald-600/80 font-bold uppercase mb-0.5">Contact Principal</div>
+                    <div className="text-sm font-bold text-slate-800">
+                      {activeClientDetails.supplierContactName || <span className="text-slate-400 italic font-medium">Non renseigné</span>}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[10px] text-emerald-600/80 font-bold uppercase mb-0.5">IBAN Coordonnées Bancaires</div>
+                    <div className="text-sm font-bold text-slate-800 font-mono text-xs">
+                      {activeClientDetails.supplierIban || <span className="text-slate-400 italic font-medium">Non renseigné</span>}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2.5 border-t border-emerald-100/50 flex items-center gap-1.5 text-[11px] font-bold text-emerald-800">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
+                  {activeClientDetails.supplierVisibilityShared 
+                    ? "✓ Partagé avec l'équipe commerciale" 
+                    : "🔒 Visible uniquement par la direction (Admin)"}
+                </div>
+              </div>
+            )}
+
+            {/* Justificatifs Documents Section */}
+            <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-xs">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-2">
+                <FileText size={14} /> Documents justificatifs du Client
+              </h3>
+              <p className="text-slate-500 text-[11px] mb-4 leading-relaxed font-medium">
+                Déposez des justificatifs officiels. Ils seront renommés automatiquement au format : <code className="font-mono text-indigo-600 font-bold">[Nom] - [Type]</code>.
+              </p>
+
+              {/* Upload Section */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-400 mb-1.5">Type de document</label>
+                  <select
+                    value={uploadDocType}
+                    onChange={(e) => setUploadDocType(e.target.value as any)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="carte_identite">Carte d'identité</option>
+                    <option value="passeport">Passeport</option>
+                    <option value="permis_conduire">Permis de conduire</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-col justify-end">
+                  <label className="block text-[10px] font-black uppercase text-slate-400 mb-1.5">Fichier justificatif</label>
+                  <label className="flex items-center justify-center gap-2 w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black px-4 py-2 rounded-xl cursor-pointer transition-all shadow-sm">
+                    {isUploadingDoc ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" />
+                        <span>Traitement...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={14} />
+                        <span>Sélectionner et renommer</span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={handleUploadDocument}
+                      disabled={isUploadingDoc}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Documents List */}
+              {(!activeClientDetails.documents || activeClientDetails.documents.length === 0) ? (
+                <div className="text-center py-6 text-slate-400 text-xs font-medium bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                  Aucun document justificatif pour le moment.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {activeClientDetails.documents.map((doc: ClientDocument) => {
+                    const handleDownload = () => {
+                      const link = document.createElement('a');
+                      link.href = doc.dataUrl || '';
+                      link.download = doc.name;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    };
+
+                    return (
+                      <div 
+                        key={doc.id}
+                        className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/30 hover:bg-slate-50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600 shrink-0">
+                            <FileText size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-slate-800 truncate" title={doc.name}>
+                              {doc.name}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
+                              <span>{doc.fileSize || 'N/A'}</span>
+                              <span>•</span>
+                              <span>Ajouté le {new Date(doc.uploadedAt).toLocaleDateString('fr-FR')}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0 pl-2">
+                          <button
+                            type="button"
+                            onClick={handleDownload}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all cursor-pointer"
+                            title="Télécharger"
+                          >
+                            <Download size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteDocument(doc.id)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
+                            title="Supprimer"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Follow-up Notes */}
+            <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-xs">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-2">
+                <MessageSquare size={14} /> Notes de suivi & Commentaire
+              </h3>
+              <p className="text-slate-500 text-[11px] mb-3 leading-relaxed font-medium">
+                Ajoutez des remarques spécifiques à propos de ce client (véhicule recherché, historique relationnel, etc.).
+              </p>
+              
+              <div className="bg-amber-50/50 rounded-xl p-4 text-xs text-slate-700 font-medium border border-amber-100/50">
+                {activeClientDetails.notes || <span className="text-slate-400 italic">Aucune note. Cliquez sur Modifier pour en rédiger une.</span>}
+              </div>
+            </div>
+
+          </div>
+
+          {/* Right Column - Purchase history */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-xs space-y-4">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                <Car size={14} /> Historique des Dossiers & Commandes Associées
+              </h3>
+
+              {activeClientDetails.purchases.length === 0 ? (
+                <div className="text-center py-10 text-slate-400 text-xs font-medium bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                  Aucun dossier d'achat associé pour le moment.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Summary Box */}
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div>
+                      <div className="text-[10px] text-slate-400 font-black uppercase tracking-wider">Total Investi chez nous</div>
+                      <div className="text-lg font-black text-emerald-600 mt-1">
+                        {(activeClientDetails.totalSpent || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-slate-400 font-black uppercase tracking-wider">Dossiers d'achat validés</div>
+                      <div className="text-lg font-black text-slate-800 mt-1">
+                        {activeClientDetails.purchases.filter((p: any) => p.factureStatus !== 'rembourse').length} / {activeClientDetails.purchases.length}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* List of Sales */}
+                  <div className="space-y-3">
+                    {activeClientDetails.purchases.map((p: Sale) => {
+                      const isRefunded = p.factureStatus === 'rembourse';
+                      return (
+                        <div 
+                          key={p.id}
+                          onClick={() => {
+                            window.location.hash = `detail/${p.id}`;
+                          }}
+                          className={`p-4 rounded-xl border cursor-pointer transition-all flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 group ${
+                            isRefunded 
+                              ? 'border-slate-200 bg-slate-100/40 opacity-70 hover:opacity-100' 
+                              : 'border-slate-100 hover:border-indigo-200 bg-slate-50/50 hover:bg-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2.5 rounded-lg shrink-0 ${isRefunded ? 'bg-slate-200 text-slate-500' : 'bg-indigo-50 text-indigo-600'}`}>
+                              <Car size={16} />
+                            </div>
+                            <div>
+                              <div className="text-sm font-black text-slate-800 group-hover:text-indigo-600 transition-colors flex items-center gap-2 flex-wrap">
+                                <span className={isRefunded ? 'line-through text-slate-400' : ''}>{p.marque} {p.modele}</span>
+                                <span className="text-[10px] font-mono text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">BDC #{p.bdcNumber}</span>
+                                {isRefunded && (
+                                  <span className="text-[9px] bg-red-100 text-red-700 font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                    Remboursé
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-slate-500 font-mono mt-0.5">
+                                Plaque : {p.plaque || 'N/A'} | VIN : {p.vin || 'N/A'}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-4 self-end sm:self-auto shrink-0">
+                            <div className="text-right">
+                              <div className={`text-sm font-black ${isRefunded ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+                                {(p.price || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1 justify-end">
+                                <Calendar size={10} /> {p.date}
+                              </div>
+                            </div>
+                            <ChevronRight size={16} className="text-slate-300 group-hover:text-indigo-400 transform group-hover:translate-x-1 transition-all" />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in-up">
       {/* Header */}
@@ -499,7 +932,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
           <div>
             <div className="flex items-center gap-2 text-indigo-400 text-xs font-black uppercase tracking-widest mb-1.5">
               <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
-              Annuaire Client & Intermédiaires
+              Annuaire des Contacts
             </div>
             <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white flex items-center gap-2">
               <Users className="text-indigo-400 w-7 h-7" />
@@ -581,7 +1014,12 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            👥 Tout ({mergedClients.length})
+            👥 Tout ({mergedClients.filter(c => {
+              if (c.type === 'fournisseur') {
+                return userProfile?.role === 'admin' || c.supplierVisibilityShared === true;
+              }
+              return true;
+            }).length})
           </button>
           <button
             onClick={() => setFilterType('client')}
@@ -603,6 +1041,21 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
           >
             🤝 Intermédiaires ({mergedClients.filter(c => c.type === 'intermediaire').length})
           </button>
+          {(userProfile?.role === 'admin' || mergedClients.some(c => c.type === 'fournisseur' && c.supplierVisibilityShared === true)) && (
+            <button
+              onClick={() => setFilterType('fournisseur')}
+              className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                filterType === 'fournisseur'
+                  ? 'bg-white text-slate-800 shadow-xs border border-slate-200/50'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              🚚 Fournisseurs ({mergedClients.filter(c => {
+                if (c.type !== 'fournisseur') return false;
+                return userProfile?.role === 'admin' || c.supplierVisibilityShared === true;
+              }).length})
+            </button>
+          )}
         </div>
 
         {/* Search Input & View Toggles */}
@@ -658,62 +1111,78 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
       ) : viewMode === 'grid' ? (
         /* GRID VIEW */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredClients.map(c => (
-            <div 
-              key={c.id} 
-              onClick={() => setSelectedClient(c)}
-              className="bg-white rounded-2xl border border-slate-100 hover:border-indigo-150 p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group relative overflow-hidden"
-            >
-              <div className="absolute right-0 top-0 w-1 bg-transparent group-hover:bg-indigo-500 h-full transition-all" />
-              
-              <div>
-                {/* Header info */}
-                <div className="flex items-start justify-between gap-2 mb-4">
-                  <div>
-                    <h3 className="font-black text-slate-800 text-base group-hover:text-indigo-600 transition-colors leading-tight">
-                      {c.name}
-                    </h3>
-                    <p className="text-slate-400 text-[9px] uppercase font-bold tracking-wider mt-1.5 flex items-center gap-1.5">
-                      <span className={`w-1.5 h-1.5 rounded-full ${c.isManual ? 'bg-amber-400' : 'bg-indigo-500'}`} />
-                      {c.isManual ? 'Enregistré Manuellement' : 'Extrait du Dossier'}
-                    </p>
+          {filteredClients.map(c => {
+            const refundedCount = c.purchases.filter((p: any) => p.factureStatus === 'rembourse').length;
+            const activePurchaseCount = c.purchases.length - refundedCount;
+
+            return (
+              <div 
+                key={c.id} 
+                onClick={() => { window.location.hash = `client/${c.id}`; }}
+                className="bg-white rounded-2xl border border-slate-100 hover:border-indigo-150 p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group relative overflow-hidden"
+              >
+                <div className="absolute right-0 top-0 w-1 bg-transparent group-hover:bg-indigo-500 h-full transition-all" />
+                
+                <div>
+                  {/* Header info */}
+                  <div className="flex items-start justify-between gap-2 mb-4">
+                    <div>
+                      <h3 className="font-black text-slate-800 text-base group-hover:text-indigo-600 transition-colors leading-tight">
+                        {c.name}
+                      </h3>
+                      <p className="text-slate-400 text-[9px] uppercase font-bold tracking-wider mt-1.5 flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${c.isManual ? 'bg-amber-400' : 'bg-indigo-500'}`} />
+                        {c.isManual ? 'Enregistré Manuellement' : 'Extrait du Dossier'}
+                      </p>
+                    </div>
+                    <ChevronRight size={16} className="text-slate-300 group-hover:text-indigo-400 transform group-hover:translate-x-1 transition-all shrink-0 mt-0.5" />
                   </div>
-                  <ChevronRight size={16} className="text-slate-300 group-hover:text-indigo-400 transform group-hover:translate-x-1 transition-all shrink-0 mt-0.5" />
+
+                  {/* Contact items */}
+                  <div className="space-y-2 mb-4">
+                    {c.phone && (
+                      <div className="flex items-center gap-2 text-xs text-slate-600 font-bold">
+                        <Phone size={13} className="text-slate-400 shrink-0" />
+                        <span>{c.phone}</span>
+                      </div>
+                    )}
+                    {c.email && (
+                      <div className="flex items-center gap-2 text-xs text-slate-600 font-bold break-all">
+                        <Mail size={13} className="text-slate-400 shrink-0" />
+                        <span className="truncate">{c.email}</span>
+                      </div>
+                    )}
+                    {(c.city || c.zipCode) && (
+                      <div className="flex items-center gap-2 text-xs text-slate-600 font-bold">
+                        <MapPin size={13} className="text-slate-400 shrink-0" />
+                        <span>{c.city} {c.zipCode ? `(${c.zipCode})` : ''}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                {/* Contact items */}
-                <div className="space-y-2 mb-4">
-                  {c.phone && (
-                    <div className="flex items-center gap-2 text-xs text-slate-600 font-bold">
-                      <Phone size={13} className="text-slate-400 shrink-0" />
-                      <span>{c.phone}</span>
+                {/* Purchase history pill & rank badge */}
+                <div className="pt-4 border-t border-slate-50 flex flex-col gap-2 mt-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-400 font-bold">Total Achat :</span>
+                    <span className="font-extrabold text-slate-800 bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-lg border border-emerald-100/50">
+                      {(c.totalSpent || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
+                    <div className="flex items-center gap-1.5 text-xs font-black text-slate-700 bg-slate-50 px-2.5 py-1 rounded-lg">
+                      <Car size={13} className="text-slate-500 shrink-0" />
+                      <span>
+                        {activePurchaseCount} {activePurchaseCount > 1 ? 'achats' : 'achat'}
+                        {refundedCount > 0 && ` (+${refundedCount} remb.)`}
+                      </span>
                     </div>
-                  )}
-                  {c.email && (
-                    <div className="flex items-center gap-2 text-xs text-slate-600 font-bold break-all">
-                      <Mail size={13} className="text-slate-400 shrink-0" />
-                      <span className="truncate">{c.email}</span>
-                    </div>
-                  )}
-                  {(c.city || c.zipCode) && (
-                    <div className="flex items-center gap-2 text-xs text-slate-600 font-bold">
-                      <MapPin size={13} className="text-slate-400 shrink-0" />
-                      <span>{c.city} {c.zipCode ? `(${c.zipCode})` : ''}</span>
-                    </div>
-                  )}
+                    {renderRankBadge(c)}
+                  </div>
                 </div>
               </div>
-
-              {/* Purchase history pill & rank badge */}
-              <div className="pt-4 border-t border-slate-50 flex items-center justify-between mt-2 flex-wrap gap-2">
-                <div className="flex items-center gap-1.5 text-xs font-black text-slate-700 bg-slate-50 px-2.5 py-1 rounded-lg">
-                  <Car size={13} className="text-slate-500" />
-                  <span>{c.purchases.length} {c.purchases.length > 1 ? 'dossiers' : 'dossier'}</span>
-                </div>
-                {renderRankBadge(c)}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         /* LIST ROW VIEW */
@@ -728,58 +1197,76 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
                   <th className="py-3.5 px-5">Email</th>
                   <th className="py-3.5 px-5">Localisation</th>
                   <th className="py-3.5 px-5 text-center">Activité</th>
+                  <th className="py-3.5 px-5 text-right">Total Achat</th>
                   <th className="py-3.5 px-5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredClients.map(c => (
-                  <tr 
-                    key={c.id} 
-                    onClick={() => setSelectedClient(c)}
-                    className="hover:bg-indigo-50/10 cursor-pointer transition-colors group"
-                  >
-                    <td className="py-3.5 px-5">
-                      <div className="flex items-center gap-3">
-                        <div className="font-extrabold text-xs text-slate-800 group-hover:text-indigo-600 transition-colors">
-                          {c.name}
+                {filteredClients.map(c => {
+                  const refundedCount = c.purchases.filter((p: any) => p.factureStatus === 'rembourse').length;
+                  const activePurchaseCount = c.purchases.length - refundedCount;
+
+                  return (
+                    <tr 
+                      key={c.id} 
+                      onClick={() => { window.location.hash = `client/${c.id}`; }}
+                      className="hover:bg-indigo-50/10 cursor-pointer transition-colors group"
+                    >
+                      <td className="py-3.5 px-5">
+                        <div className="flex items-center gap-3">
+                          <div className="font-extrabold text-xs text-slate-800 group-hover:text-indigo-600 transition-colors">
+                            {c.name}
+                          </div>
+                          {renderRankBadge(c)}
                         </div>
-                        {renderRankBadge(c)}
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-5">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        c.type === 'intermediaire' ? 'bg-sky-50 text-sky-700' : 'bg-indigo-50 text-indigo-700'
-                      }`}>
-                        {c.type === 'intermediaire' ? 'Intermédiaire' : 'Acheteur'}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-5 text-xs text-slate-600 font-bold">
-                      {c.phone || <span className="text-slate-300">-</span>}
-                    </td>
-                    <td className="py-3.5 px-5 text-xs text-slate-600 font-bold truncate max-w-[180px]">
-                      {c.email || <span className="text-slate-300">-</span>}
-                    </td>
-                    <td className="py-3.5 px-5 text-xs text-slate-600 font-bold">
-                      {c.city ? `${c.city} (${c.zipCode || ''})` : <span className="text-slate-300">-</span>}
-                    </td>
-                    <td className="py-3.5 px-5 text-center">
-                      <span className="text-xs bg-slate-100 text-slate-700 font-extrabold px-2 py-1 rounded-md">
-                        {c.purchases.length} dossiers
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-5 text-right select-none" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => setSelectedClient(c)}
-                          className="p-1.5 text-slate-400 hover:text-indigo-600 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                          title="Consulter"
-                        >
-                          <ChevronRight size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="py-3.5 px-5">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          c.type === 'intermediaire' ? 'bg-sky-50 text-sky-700' : 'bg-indigo-50 text-indigo-700'
+                        }`}>
+                          {c.type === 'intermediaire' ? 'Intermédiaire' : 'Acheteur'}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-5 text-xs text-slate-600 font-bold">
+                        {c.phone || <span className="text-slate-300">-</span>}
+                      </td>
+                      <td className="py-3.5 px-5 text-xs text-slate-600 font-bold truncate max-w-[180px]">
+                        {c.email || <span className="text-slate-300">-</span>}
+                      </td>
+                      <td className="py-3.5 px-5 text-xs text-slate-600 font-bold">
+                        {c.city ? `${c.city} (${c.zipCode || ''})` : <span className="text-slate-300">-</span>}
+                      </td>
+                      <td className="py-3.5 px-5 text-center">
+                        <div className="flex flex-col items-center">
+                          <span className="text-xs bg-slate-100 text-slate-700 font-extrabold px-2 py-0.5 rounded-md">
+                            {activePurchaseCount} {activePurchaseCount > 1 ? 'achats' : 'achat'}
+                          </span>
+                          {refundedCount > 0 && (
+                            <span className="text-[9px] text-slate-400 font-bold mt-0.5">
+                              +{refundedCount} remboursé
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-5 text-right">
+                        <span className="text-xs font-black text-slate-900 bg-emerald-50 text-emerald-700 border border-emerald-100 px-2.5 py-1 rounded-lg">
+                          {(c.totalSpent || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-5 text-right select-none" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => { window.location.hash = `client/${c.id}`; }}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                            title="Consulter"
+                          >
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -867,6 +1354,51 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
                 </div>
               </div>
 
+              {activeClientDetails.type === 'fournisseur' && (
+                <div className="bg-emerald-50/40 rounded-2xl p-5 border border-emerald-100 shadow-xs space-y-4">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-emerald-800 flex items-center gap-2">
+                    🚚 Spécificités Fournisseur
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-[10px] text-emerald-600/80 font-bold uppercase mb-0.5">Secteur d'activité</div>
+                      <div className="text-sm font-bold text-slate-800">
+                        {activeClientDetails.supplierActivity || <span className="text-slate-400 italic font-medium">Non renseigné</span>}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <div className="text-[10px] text-emerald-600/80 font-bold uppercase mb-0.5">Numéro SIRET</div>
+                      <div className="text-sm font-bold text-slate-800">
+                        {activeClientDetails.supplierSiret || <span className="text-slate-400 italic font-medium">Non renseigné</span>}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-[10px] text-emerald-600/80 font-bold uppercase mb-0.5">Contact Principal</div>
+                      <div className="text-sm font-bold text-slate-800">
+                        {activeClientDetails.supplierContactName || <span className="text-slate-400 italic font-medium">Non renseigné</span>}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-[10px] text-emerald-600/80 font-bold uppercase mb-0.5">IBAN Coordonnées Bancaires</div>
+                      <div className="text-sm font-bold text-slate-800 font-mono text-xs font-medium">
+                        {activeClientDetails.supplierIban || <span className="text-slate-400 italic font-medium">Non renseigné</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2.5 border-t border-emerald-100/50 flex items-center gap-1.5 text-[11px] font-bold text-emerald-800">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
+                    {activeClientDetails.supplierVisibilityShared 
+                      ? "✓ Partagé avec l'équipe commerciale" 
+                      : "🔒 Visible uniquement par la direction (Admin)"}
+                  </div>
+                </div>
+              )}
+
               {/* Purchases list */}
               <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-xs">
                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
@@ -879,43 +1411,71 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {activeClientDetails.purchases.map((p: Sale) => (
-                      <div 
-                        key={p.id}
-                        onClick={() => {
-                          setSelectedClient(null);
-                          window.location.hash = `detail/${p.id}`;
-                        }}
-                        className="p-4 rounded-xl border border-slate-100 hover:border-indigo-200 bg-slate-50/50 hover:bg-white cursor-pointer transition-all flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 group"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-lg bg-indigo-50 text-indigo-600">
-                            <Car size={16} />
-                          </div>
-                          <div>
-                            <div className="text-sm font-black text-slate-800 group-hover:text-indigo-600 transition-colors flex items-center gap-2 flex-wrap">
-                              <span>{p.marque} {p.modele}</span>
-                              <span className="text-[10px] font-mono text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">BDC #{p.bdcNumber}</span>
-                            </div>
-                            <div className="text-xs text-slate-500 font-mono mt-0.5">
-                              Plaque : {p.plaque || 'N/A'} | VIN : {p.vin || 'N/A'}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-4 self-end sm:self-auto">
-                          <div className="text-right">
-                            <div className="text-sm font-black text-slate-900">
-                              {(p.price || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
-                            </div>
-                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1 justify-end">
-                              <Calendar size={10} /> {p.date}
-                            </div>
-                          </div>
-                          <ChevronRight size={16} className="text-slate-300 group-hover:text-indigo-400 transform group-hover:translate-x-1 transition-all" />
+                    {/* Summary Card inside Drawer */}
+                    <div className="grid grid-cols-2 gap-4 p-3.5 bg-slate-50 rounded-2xl border border-slate-100 mb-4 select-none">
+                      <div>
+                        <div className="text-[10px] text-slate-400 font-black uppercase tracking-wider">Total Investi</div>
+                        <div className="text-base font-black text-emerald-600 mt-0.5">
+                          {(activeClientDetails.totalSpent || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
                         </div>
                       </div>
-                    ))}
+                      <div>
+                        <div className="text-[10px] text-slate-400 font-black uppercase tracking-wider">Dossiers d'achat</div>
+                        <div className="text-base font-black text-slate-800 mt-0.5">
+                          {activeClientDetails.purchases.filter((p: any) => p.factureStatus !== 'rembourse').length} / {activeClientDetails.purchases.length}
+                        </div>
+                      </div>
+                    </div>
+
+                    {activeClientDetails.purchases.map((p: Sale) => {
+                      const isRefunded = p.factureStatus === 'rembourse';
+                      return (
+                        <div 
+                          key={p.id}
+                          onClick={() => {
+                            setSelectedClient(null);
+                            window.location.hash = `detail/${p.id}`;
+                          }}
+                          className={`p-4 rounded-xl border cursor-pointer transition-all flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 group ${
+                            isRefunded 
+                              ? 'border-slate-200 bg-slate-100/40 opacity-70 hover:opacity-100' 
+                              : 'border-slate-100 hover:border-indigo-200 bg-slate-50/50 hover:bg-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2.5 rounded-lg shrink-0 ${isRefunded ? 'bg-slate-200 text-slate-500' : 'bg-indigo-50 text-indigo-600'}`}>
+                              <Car size={16} />
+                            </div>
+                            <div>
+                              <div className="text-sm font-black text-slate-800 group-hover:text-indigo-600 transition-colors flex items-center gap-2 flex-wrap">
+                                <span className={isRefunded ? 'line-through text-slate-400' : ''}>{p.marque} {p.modele}</span>
+                                <span className="text-[10px] font-mono text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">BDC #{p.bdcNumber}</span>
+                                {isRefunded && (
+                                  <span className="text-[9px] bg-red-100 text-red-700 font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                    Remboursé
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-slate-500 font-mono mt-0.5">
+                                Plaque : {p.plaque || 'N/A'} | VIN : {p.vin || 'N/A'}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-4 self-end sm:self-auto shrink-0">
+                            <div className="text-right">
+                              <div className={`text-sm font-black ${isRefunded ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+                                {(p.price || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1 justify-end">
+                                <Calendar size={10} /> {p.date}
+                              </div>
+                            </div>
+                            <ChevronRight size={16} className="text-slate-300 group-hover:text-indigo-400 transform group-hover:translate-x-1 transition-all" />
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1079,7 +1639,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
       {/* Add / Edit Client Modal */}
       {showAddModal && (
         <div 
-          onClick={() => { setShowAddModal(false); setIsEditing(false); }} // Close on backdrop click
+          onClick={() => { setShowAddModal(false); setIsEditing(false); setSelectedClient(null); }} // Close on backdrop click
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4"
         >
           <form 
@@ -1091,7 +1651,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
             <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 p-6 text-white relative select-none">
               <button 
                 type="button"
-                onClick={() => { setShowAddModal(false); setIsEditing(false); }}
+                onClick={() => { setShowAddModal(false); setIsEditing(false); setSelectedClient(null); }}
                 className="absolute right-4 top-4 text-white/70 hover:text-white p-1 rounded-full bg-white/10 hover:bg-white/20 transition-all"
               >
                 <X size={20} />
@@ -1134,8 +1694,21 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
                           : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
                       }`}
                     >
-                      🤝 Intermédiaire (Réf)
+                      🤝 Réf
                     </button>
+                    {userProfile?.role === 'admin' && (
+                      <button
+                        type="button"
+                        onClick={() => setFormType('fournisseur')}
+                        className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer border ${
+                          formType === 'fournisseur'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-xs'
+                            : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        🚚 Fournisseur
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1223,6 +1796,81 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
                 </div>
               </div>
 
+              {formType === 'fournisseur' && (
+                <div className="p-4 bg-emerald-50/50 border border-emerald-100 rounded-2xl space-y-4">
+                  <h4 className="text-xs font-black text-emerald-800 uppercase tracking-wider flex items-center gap-1.5">
+                    🚚 Informations Spécifiques Fournisseur
+                  </h4>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-emerald-700 mb-1">
+                        Secteur d'activité
+                      </label>
+                      <input 
+                        type="text" 
+                        placeholder="ex: Véhicules d'Occasion, Carrosserie"
+                        value={formSupplierActivity}
+                        onChange={e => setFormSupplierActivity(e.target.value)}
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-xs font-black text-slate-800"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-emerald-700 mb-1">
+                        Numéro SIRET
+                      </label>
+                      <input 
+                        type="text" 
+                        placeholder="ex: 123 456 789 00012"
+                        value={formSupplierSiret}
+                        onChange={e => setFormSupplierSiret(e.target.value)}
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-xs font-black text-slate-800"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-emerald-700 mb-1">
+                        Contact Principal (Nom)
+                      </label>
+                      <input 
+                        type="text" 
+                        placeholder="ex: M. Robert Martin"
+                        value={formSupplierContactName}
+                        onChange={e => setFormSupplierContactName(e.target.value)}
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-xs font-black text-slate-800"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-emerald-700 mb-1">
+                        IBAN / Coordonnées Bancaires
+                      </label>
+                      <input 
+                        type="text" 
+                        placeholder="ex: FR76 3000..."
+                        value={formSupplierIban}
+                        onChange={e => setFormSupplierIban(e.target.value)}
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-xs font-black text-slate-800"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2 border-t border-emerald-100/50">
+                    <input 
+                      type="checkbox" 
+                      id="supplierVisibilityShared"
+                      checked={formSupplierVisibilityShared}
+                      onChange={e => setFormSupplierVisibilityShared(e.target.checked)}
+                      className="w-4 h-4 text-emerald-600 border-emerald-300 rounded focus:ring-emerald-500"
+                    />
+                    <label htmlFor="supplierVisibilityShared" className="text-xs font-black text-emerald-800 cursor-pointer select-none">
+                      Partager la visibilité de ce fournisseur avec mes commerciaux
+                    </label>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   Remarques / Notes de Suivi
@@ -1241,7 +1889,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onShowToast }) => {
             <div className="bg-slate-50 px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3 select-none shrink-0">
               <button 
                 type="button"
-                onClick={() => { setShowAddModal(false); setIsEditing(false); }}
+                onClick={() => { setShowAddModal(false); setIsEditing(false); setSelectedClient(null); }}
                 className="text-xs font-black text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 px-4 py-2.5 rounded-xl cursor-pointer"
               >
                 Annuler

@@ -6,6 +6,8 @@ import {
 import { db, doc, setDoc, deleteDoc, getUserPath } from '../lib/firebase';
 import { useApp } from '../lib/context';
 import { Vehicle, VehicleDocument } from '../types';
+import { VehicleDetailView } from './VehicleDetailView';
+import { LogisticsView } from './LogisticsView';
 
 interface Props {
   onShowToast: (m: string, t: 'success' | 'error') => void;
@@ -87,15 +89,49 @@ export const CarOutlineSVG: React.FC = () => (
 export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
   const { vehicles, userProfile, databaseUid, selectedVehicleId, setSelectedVehicleId } = useApp();
   
+  // Sub tab navigation: Véhicules vs Logistique
+  const [activeSubTab, setActiveSubTab] = useState<'vehicules' | 'logistique'>('vehicules');
+
+  useEffect(() => {
+    const handleTabSync = () => {
+      const storedTab = localStorage.getItem('stock_subtab');
+      if (storedTab === 'logistique' || storedTab === 'vehicules') {
+        setActiveSubTab(storedTab as 'vehicules' | 'logistique');
+      }
+    };
+    handleTabSync();
+    window.addEventListener('hashchange', handleTabSync);
+    return () => window.removeEventListener('hashchange', handleTabSync);
+  }, []);
+  const arrivageVehiclesCount = useMemo(() => vehicles.filter(v => v.status === 'ARRIVAGE').length, [vehicles]);
+
   // View states
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+
+  const [activeVehicleId, setActiveVehicleId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleHashCheck = () => {
+      const hash = window.location.hash;
+      if (hash.startsWith('#vehicle/')) {
+        const id = hash.replace('#vehicle/', '');
+        setActiveVehicleId(id);
+      } else {
+        setActiveVehicleId(null);
+      }
+    };
+
+    handleHashCheck();
+    window.addEventListener('hashchange', handleHashCheck);
+    return () => window.removeEventListener('hashchange', handleHashCheck);
+  }, []);
 
   // Monitor selectedVehicleId from global search
   useEffect(() => {
     if (selectedVehicleId && vehicles.length > 0) {
       const found = vehicles.find(v => v.id === selectedVehicleId);
       if (found) {
-        setSelectedVehicle(found);
+        window.location.hash = `vehicle/${found.id}`;
         setSelectedVehicleId(null);
       }
     }
@@ -106,10 +142,11 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
 
   // Filters
   const [filterSite, setFilterSite] = useState('Toutes');
-  const [filterStatus, setFilterStatus] = useState('Tous');
+  const [filterStatus, setFilterStatus] = useState<string[]>([]);
   const [filterType, setFilterType] = useState('Tous');
   const [filterEnergy, setFilterEnergy] = useState('Tous');
   const [searchQuery, setSearchQuery] = useState('');
+  const [priceDisplayMode, setPriceDisplayMode] = useState<'HT' | 'TTC'>('HT');
 
   // Sorting
   const [sortField, setSortField] = useState<keyof Vehicle>('createdAt');
@@ -523,8 +560,8 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
     }
 
     // Filter by status
-    if (filterStatus !== 'Tous') {
-      list = list.filter(v => v.status === filterStatus);
+    if (filterStatus && filterStatus.length > 0) {
+      list = list.filter(v => v.status && filterStatus.includes(v.status));
     }
 
     // Filter by type
@@ -623,6 +660,150 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
     onShowToast("Export CSV réussi !", "success");
   };
 
+  const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        if (!text) return;
+
+        const lines = text.split(/\r?\n/);
+        if (lines.length < 2) {
+          onShowToast("Le fichier CSV est vide ou invalide.", "error");
+          return;
+        }
+
+        const firstLine = lines[0];
+        const delimiter = firstLine.includes(';') ? ';' : ',';
+        const headers = firstLine.split(delimiter).map(h => h.trim().toLowerCase().replace(/^["']|["']$/g, ''));
+
+        const parsedVehicles: Partial<Vehicle>[] = [];
+
+        const cleanField = (f: string) => {
+          if (!f) return '';
+          return f.trim().replace(/^["']|["']$/g, '');
+        };
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+
+          let cols: string[] = [];
+          if (delimiter === ';') {
+            cols = line.split(';');
+          } else {
+            let insideQuote = false;
+            let currentField = '';
+            for (let c = 0; c < line.length; c++) {
+              const char = line[c];
+              if (char === '"' || char === "'") {
+                insideQuote = !insideQuote;
+              } else if (char === ',' && !insideQuote) {
+                cols.push(currentField);
+                currentField = '';
+              } else {
+                currentField += char;
+              }
+            }
+            cols.push(currentField);
+          }
+
+          const rowData: Record<string, string> = {};
+          headers.forEach((header, idx) => {
+            if (cols[idx] !== undefined) {
+              rowData[header] = cleanField(cols[idx]);
+            }
+          });
+
+          const getVal = (possibleHeaders: string[]): string | undefined => {
+            for (const ph of possibleHeaders) {
+              const cleanedPh = ph.toLowerCase().trim();
+              if (rowData[cleanedPh] !== undefined) return rowData[cleanedPh];
+            }
+            return undefined;
+          };
+
+          const valMarque = getVal(['marque', 'brand', 'maker', 'constructeur']) || '';
+          const valModele = getVal(['modele', 'modèle', 'model']) || '';
+          const valVersion = getVal(['version', 'trim']) || '';
+
+          if (!valMarque && !valModele) continue;
+
+          const valImmat = getVal(['immatriculation', 'immat', 'plaque', 'plate']) || '';
+          const valVin = getVal(['vin', 'chassis', 'châssis']) || '';
+          const valSite = getVal(['site', 'entreprise', 'company', 'garage', 'entreprise / depot vente']) || (userCompanies[0] || 'DJ CAR');
+          const valKms = parseFloat(getVal(['kms', 'kilometrage', 'kilométrage', 'km', 'mileage']) || '0') || 0;
+          
+          const valPriceTTC = parseFloat(getVal(['prixparticulierttc', 'prixparticulier', 'prix', 'prixttc', 'price', 'prix particulier ttc', 'prix ttc']) || '0') || undefined;
+          const valPriceHT = parseFloat(getVal(['prixparticulierht', 'prixht', 'prix ht', 'prix particulier ht', 'ht']) || '0') || undefined;
+          
+          const finalPriceTTC = valPriceTTC || (valPriceHT ? parseFloat((valPriceHT * 1.2).toFixed(2)) : undefined);
+          const finalPriceHT = valPriceHT || (valPriceTTC ? parseFloat((valPriceTTC / 1.2).toFixed(2)) : undefined);
+
+          const valAnnee = getVal(['annee', 'année', 'year']) || new Date().getFullYear().toString();
+          const valEnergie = getVal(['energie', 'énergie', 'fuel']) || 'Diesel';
+          const valBoite = getVal(['boite', 'boîte', 'transmission']) || 'Manuelle';
+          const valCouleur = getVal(['couleur', 'color']) || '';
+          
+          let valStatus = (getVal(['status', 'statut', 'etat', 'état']) || 'PARC').toUpperCase();
+          if (valStatus === 'EN PARC' || valStatus === 'PARC') valStatus = 'PARC';
+          else if (valStatus === 'ARRIVAGE') valStatus = 'ARRIVAGE';
+          else if (valStatus === 'EN COURS' || valStatus === 'EN_COURS') valStatus = 'EN_COURS';
+          else if (valStatus === 'EN REPARATION' || valStatus === 'EN_REPARATION') valStatus = 'EN_REPARATION';
+          else if (valStatus === 'VENDU') valStatus = 'VENDU';
+          else valStatus = 'PARC';
+
+          const vId = `v-csv-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+          const newV: Partial<Vehicle> = {
+            ...initialFormState(),
+            id: vId,
+            site: valSite,
+            marque: valMarque.toUpperCase(),
+            modele: valModele.toUpperCase(),
+            version: valVersion,
+            immatriculation: valImmat.toUpperCase(),
+            vin: valVin.toUpperCase(),
+            kms: valKms,
+            prixParticulierTTC: finalPriceTTC,
+            prixParticulierHT: finalPriceHT,
+            annee: valAnnee,
+            energie: valEnergie,
+            boite: valBoite,
+            couleur: valCouleur,
+            status: valStatus as any,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+
+          parsedVehicles.push(newV);
+        }
+
+        if (parsedVehicles.length === 0) {
+          onShowToast("Aucun véhicule valide n'a été trouvé dans le CSV.", "error");
+          return;
+        }
+
+        if (window.confirm(`Importer ${parsedVehicles.length} véhicule(s) dans votre stock ?`)) {
+          let count = 0;
+          for (const v of parsedVehicles) {
+            await setDoc(doc(db, getUserPath('vehicles', databaseUid), v.id!), v, { merge: true });
+            count++;
+          }
+          onShowToast(`${count} véhicules importés avec succès !`, "success");
+        }
+      } catch (err: any) {
+        console.error("CSV import error:", err);
+        onShowToast("Erreur lors de l'import : " + err.message, "error");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
   const handleSort = (field: keyof Vehicle) => {
     if (sortField === field) {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -631,6 +812,17 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
       setSortDirection('desc');
     }
   };
+
+  if (activeVehicleId) {
+    return (
+      <VehicleDetailView 
+        vehicleId={activeVehicleId}
+        onBack={() => { window.location.hash = 'stock'; }}
+        onShowToast={onShowToast}
+        onCreateBdc={onCreateBdc}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-slate-50/50 animate-fade-in-up">
@@ -654,118 +846,234 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
             </div>
 
             <div className="flex items-center gap-2.5 self-start md:self-center">
-              <button 
-                onClick={handleExportCSV}
-                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/10 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer"
-              >
-                <FileDown size={15} />
-                Exporter CSV ({filteredVehicles.length})
-              </button>
+              {activeSubTab === 'vehicules' && (
+                <>
+                  <button 
+                    onClick={handleExportCSV}
+                    className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/10 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  >
+                    <FileDown size={15} />
+                    Exporter CSV ({filteredVehicles.length})
+                  </button>
 
-              <button 
-                onClick={() => {
-                  setForm(initialFormState());
-                  setDefautPoints([]);
-                  setIsAdding(true);
-                  setIsEditing(false);
-                }}
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl text-xs font-black shadow-lg shadow-indigo-500/25 transition-all cursor-pointer"
-              >
-                <Plus size={16} />
-                Ajouter un Véhicule
-              </button>
+                  <label className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/10 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer">
+                    <UploadCloud size={15} />
+                    Importer CSV
+                    <input 
+                      type="file" 
+                      accept=".csv" 
+                      onChange={handleImportCSV} 
+                      className="hidden" 
+                    />
+                  </label>
+
+                  <button 
+                    onClick={() => {
+                      setForm(initialFormState());
+                      setDefautPoints([]);
+                      setIsAdding(true);
+                      setIsEditing(false);
+                    }}
+                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl text-xs font-black shadow-lg shadow-indigo-500/25 transition-all cursor-pointer"
+                  >
+                    <Plus size={16} />
+                    Ajouter un Véhicule
+                  </button>
+                </>
+              )}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Navigation Tabs (Véhicules / Logistique) */}
+      <div className="px-8 mt-6 shrink-0">
+        <div className="flex items-center gap-2 border-b border-slate-200 pb-px">
+          <button
+            onClick={() => {
+              setActiveSubTab('vehicules');
+              localStorage.setItem('stock_subtab', 'vehicules');
+            }}
+            className={`px-5 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all relative flex items-center gap-2 cursor-pointer ${
+              activeSubTab === 'vehicules'
+                ? 'border-indigo-600 text-slate-900'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <Car size={14} />
+            Véhicules en Stock
+          </button>
+          <button
+            onClick={() => {
+              setActiveSubTab('logistique');
+              localStorage.setItem('stock_subtab', 'logistique');
+            }}
+            className={`px-5 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all relative flex items-center gap-2 cursor-pointer ${
+              activeSubTab === 'logistique'
+                ? 'border-indigo-600 text-slate-900'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <FileText size={14} />
+            Logistique & Réception
+            {arrivageVehiclesCount > 0 && (
+              <span className="bg-amber-100 text-amber-800 text-[9px] font-black px-1.5 py-0.5 rounded-full ml-1">
+                {arrivageVehiclesCount} En arrivage
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
       {/* Main Body */}
       <div className="flex-1 overflow-auto px-8 py-6 flex flex-col gap-6">
         
-        {/* Filters Panel */}
-        <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-xs flex flex-col gap-4">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-            
-            {/* Search */}
-            <div className="relative md:col-span-2">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-              <input 
-                type="text"
-                placeholder="Rechercher Marque, Modèle, Immat, Réf, N° VO..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-100 hover:border-slate-200 focus:border-blue-500 focus:bg-white rounded-xl text-xs font-medium text-slate-800 transition-all outline-none"
-              />
+        {activeSubTab === 'logistique' ? (
+          <LogisticsView onShowToast={onShowToast} />
+        ) : (
+          <>
+            {/* Filters Panel */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-xs flex flex-col gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                
+                {/* Search */}
+                <div className="relative md:col-span-4">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                  <input 
+                    type="text"
+                    placeholder="Rechercher Marque, Modèle, Immat, Réf, N° VO..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-100 hover:border-slate-200 focus:border-blue-500 focus:bg-white rounded-xl text-xs font-medium text-slate-800 transition-all outline-none"
+                  />
+                </div>
+
+                {/* Site / Entreprise Filter */}
+                <div className="md:col-span-3">
+                  <select
+                    value={filterSite}
+                    onChange={e => setFilterSite(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-100 hover:border-slate-200 focus:border-blue-500 focus:bg-white rounded-xl text-xs font-semibold text-slate-700 transition-all outline-none"
+                  >
+                    <option value="Toutes">Toutes les Entreprises</option>
+                    {userCompanies.map(s => <option key={s} value={s}>{s}</option>)}
+                    <option value="Dépôt-vente">Dépôt-vente</option>
+                  </select>
+                </div>
+
+                {/* Type VN/VO */}
+                <div className="md:col-span-3">
+                  <select
+                    value={filterType}
+                    onChange={e => setFilterType(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-100 hover:border-slate-200 focus:border-blue-500 focus:bg-white rounded-xl text-xs font-semibold text-slate-700 transition-all outline-none"
+                  >
+                    <option value="Tous">Type : Tous</option>
+                    <option value="VN">VN (Neuf)</option>
+                    <option value="VO">VO (Occasion)</option>
+                  </select>
+                </div>
+
+                {/* Affichage Prix - Discreet Toggle */}
+                <div className="md:col-span-2 flex items-center justify-end gap-1.5">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Prix :</span>
+                  <div className="inline-flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setPriceDisplayMode('HT')}
+                      className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase transition-all cursor-pointer ${
+                        priceDisplayMode === 'HT'
+                          ? 'bg-white text-indigo-600 shadow-xs border border-slate-200/50'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      HT
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPriceDisplayMode('TTC')}
+                      className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase transition-all cursor-pointer ${
+                        priceDisplayMode === 'TTC'
+                          ? 'bg-white text-indigo-600 shadow-xs border border-slate-200/50'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      TTC
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Multi-Status Filter Row */}
+              <div className="border-t border-slate-100 pt-3 flex flex-wrap gap-2 items-center">
+                <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider mr-2">États :</span>
+                {[
+                  { id: 'PARC', label: 'Parc' },
+                  { id: 'ARRIVAGE', label: 'Arrivage' },
+                  { id: 'EN_COURS', label: 'En cours' },
+                  { id: 'EN_REPARATION', label: 'Réparation' },
+                  { id: 'VENDU', label: 'Vendu' }
+                ].map(statusItem => {
+                  const isSelected = filterStatus.includes(statusItem.id);
+                  return (
+                    <button
+                      key={statusItem.id}
+                      type="button"
+                      onClick={() => {
+                        if (isSelected) {
+                          setFilterStatus(prev => prev.filter(x => x !== statusItem.id));
+                        } else {
+                          setFilterStatus(prev => [...prev, statusItem.id]);
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                        isSelected 
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {isSelected && <Check size={12} />}
+                      {statusItem.label}
+                    </button>
+                  );
+                })}
+                {filterStatus.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setFilterStatus([])}
+                    className="text-xs text-red-500 hover:text-red-700 font-extrabold px-2 py-1 ml-2 transition-colors cursor-pointer"
+                  >
+                    Effacer tous les filtres
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* Site / Entreprise Filter */}
-            <div>
-              <select
-                value={filterSite}
-                onChange={e => setFilterSite(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-100 hover:border-slate-200 focus:border-blue-500 focus:bg-white rounded-xl text-xs font-semibold text-slate-700 transition-all outline-none"
-              >
-                <option value="Toutes">Toutes les Entreprises</option>
-                {userCompanies.map(s => <option key={s} value={s}>{s}</option>)}
-                <option value="Dépôt-vente">Dépôt-vente</option>
-              </select>
-            </div>
-
-            {/* Status */}
-            <div>
-              <select
-                value={filterStatus}
-                onChange={e => setFilterStatus(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-100 hover:border-slate-200 focus:border-blue-500 focus:bg-white rounded-xl text-xs font-semibold text-slate-700 transition-all outline-none"
-              >
-                <option value="Tous">Tous les États</option>
-                <option value="PARC">Parc</option>
-                <option value="ARRIVAGE">Arrivage</option>
-                <option value="EN_COURS">En cours</option>
-                <option value="EN_REPARATION">En réparation</option>
-                <option value="VENDU">Vendu / Clôturé</option>
-              </select>
-            </div>
-
-            {/* Type VN/VO */}
-            <div>
-              <select
-                value={filterType}
-                onChange={e => setFilterType(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-100 hover:border-slate-200 focus:border-blue-500 focus:bg-white rounded-xl text-xs font-semibold text-slate-700 transition-all outline-none"
-              >
-                <option value="Tous">Type : Tous</option>
-                <option value="VN">VN (Neuf)</option>
-                <option value="VO">VO (Occasion)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Vehicles Grid and Detail View Split */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          
-          {/* List Section */}
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50/75 border-b border-slate-100 text-[10px] font-black uppercase text-slate-500 tracking-wider select-none">
-                    <th className="py-4 px-6 cursor-pointer hover:bg-slate-100 transition-all" onClick={() => handleSort('marque')}>
-                      Véhicule <ArrowUpDown size={10} className="inline ml-1" />
-                    </th>
-                    <th className="py-4 px-4 cursor-pointer hover:bg-slate-100 transition-all" onClick={() => handleSort('site')}>
-                      Entreprise <ArrowUpDown size={10} className="inline ml-1" />
-                    </th>
-                    <th className="py-4 px-4 cursor-pointer hover:bg-slate-100 transition-all" onClick={() => handleSort('refInterne')}>
-                      Réf Interne <ArrowUpDown size={10} className="inline ml-1" />
-                    </th>
-                    <th className="py-4 px-4 cursor-pointer hover:bg-slate-100 transition-all" onClick={() => handleSort('numVO')}>
-                      N° VO <ArrowUpDown size={10} className="inline ml-1" />
-                    </th>
-                    <th className="py-4 px-4 cursor-pointer hover:bg-slate-100 transition-all text-right" onClick={() => handleSort('prixParticulierTTC')}>
-                      Prix HT <ArrowUpDown size={10} className="inline ml-1" />
-                    </th>
+            {/* Vehicles Grid and Detail View Split */}
+            <div className="w-full">
+              
+              {/* List Section */}
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-xs overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50/75 border-b border-slate-100 text-[10px] font-black uppercase text-slate-500 tracking-wider select-none">
+                        <th className="py-4 px-6 cursor-pointer hover:bg-slate-100 transition-all" onClick={() => handleSort('marque')}>
+                          Véhicule <ArrowUpDown size={10} className="inline ml-1" />
+                        </th>
+                        <th className="py-4 px-4 cursor-pointer hover:bg-slate-100 transition-all" onClick={() => handleSort('site')}>
+                          Entreprise <ArrowUpDown size={10} className="inline ml-1" />
+                        </th>
+                        <th className="py-4 px-4 cursor-pointer hover:bg-slate-100 transition-all" onClick={() => handleSort('refInterne')}>
+                          Réf Interne <ArrowUpDown size={10} className="inline ml-1" />
+                        </th>
+                        <th className="py-4 px-4 cursor-pointer hover:bg-slate-100 transition-all" onClick={() => handleSort('numVO')}>
+                          N° VO <ArrowUpDown size={10} className="inline ml-1" />
+                        </th>
+                        <th className="py-4 px-4 cursor-pointer hover:bg-slate-100 transition-all text-right" onClick={() => handleSort(priceDisplayMode === 'HT' ? 'prixParticulierHT' : 'prixParticulierTTC')}>
+                          {priceDisplayMode === 'HT' ? 'Prix HT' : 'Prix TTC'} <ArrowUpDown size={10} className="inline ml-1" />
+                        </th>
                     <th className="py-4 px-4 cursor-pointer hover:bg-slate-100 transition-all text-center" onClick={() => handleSort('status')}>
                       Statut <ArrowUpDown size={10} className="inline ml-1" />
                     </th>
@@ -788,10 +1096,10 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
                         <tr 
                           key={v.id}
                           className={`hover:bg-slate-50/70 transition-all cursor-pointer ${isSelected ? 'bg-blue-50/50' : ''}`}
-                          onClick={() => setSelectedVehicle(v)}
+                          onClick={() => { window.location.hash = `vehicle/${v.id}`; }}
                         >
                           <td className="py-4 px-6">
-                            <div className="font-extrabold text-slate-900">{v.marque} {v.modele}</div>
+                            <div className="font-extrabold text-slate-900">{v.marque} {v.modele} {v.version}</div>
                             <div className="text-[10px] text-slate-500 font-medium mt-0.5 flex items-center gap-1.5">
                               <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold text-[9px]">{v.type}</span>
                               {v.type2 && <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold text-[9px]">{v.type2}</span>}
@@ -811,7 +1119,10 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
                             </span>
                           </td>
                           <td className="py-4 px-4 text-right font-black text-slate-950">
-                            {v.prixParticulierTTC ? `${v.prixParticulierTTC.toLocaleString()} €` : '--'}
+                            {priceDisplayMode === 'HT' 
+                              ? (v.prixParticulierHT ? `${v.prixParticulierHT.toLocaleString()} € HT` : '--')
+                              : (v.prixParticulierTTC ? `${v.prixParticulierTTC.toLocaleString()} € TTC` : '--')
+                            }
                           </td>
                           <td className="py-4 px-4 text-center">
                             <span className={`px-2.5 py-1 rounded-full text-[9px] font-black inline-block tracking-wider ${
@@ -836,7 +1147,7 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
                           <td className="py-4 px-6 text-center" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center justify-center gap-2">
                               <button 
-                                onClick={() => setSelectedVehicle(v)}
+                                onClick={() => { window.location.hash = `vehicle/${v.id}`; }}
                                 className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-blue-600 rounded-lg transition-all"
                                 title="Voir la fiche"
                               >
@@ -873,178 +1184,24 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
               </table>
             </div>
           </div>
-
-          {/* Detailed Side Panel */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-xs overflow-hidden p-6 select-none min-h-[400px]">
-            {selectedVehicle ? (
-              <div className="flex flex-col h-full gap-5">
-                
-                {/* Header detail */}
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-1 rounded tracking-wider uppercase">
-                      {selectedVehicle.site || 'Entreprise'}
-                    </span>
-                    <h2 className="text-xl font-black text-slate-900 tracking-tight mt-2 uppercase">
-                      {selectedVehicle.marque} {selectedVehicle.modele}
-                    </h2>
-                    <p className="text-slate-500 text-xs mt-0.5 font-medium">
-                      {selectedVehicle.version || 'Version non précisée'}
-                    </p>
-                  </div>
-
-                  <span className={`px-3 py-1.5 rounded-full text-[10px] font-black tracking-wider ${
-                    selectedVehicle.status === 'PARC' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
-                    selectedVehicle.status === 'ARRIVAGE' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
-                    selectedVehicle.status === 'EN_COURS' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
-                    selectedVehicle.status === 'EN_REPARATION' ? 'bg-purple-50 text-purple-700 border border-purple-100' :
-                    'bg-slate-100 text-slate-500'
-                  }`}>
-                    {selectedVehicle.status === 'PARC' ? 'Parc' : selectedVehicle.status}
-                  </span>
-                </div>
-
-                <div className="border-t border-slate-100 my-1"></div>
-
-                {/* Info List */}
-                <div className="grid grid-cols-2 gap-y-4 gap-x-6 text-xs">
-                  <div>
-                    <span className="text-slate-400 font-semibold block">Immatriculation</span>
-                    <span className="font-mono text-slate-900 font-extrabold">{selectedVehicle.immatriculation || 'Non renseignée'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 font-semibold block">Réf. Interne</span>
-                    <span className="font-mono text-slate-900 font-extrabold">{selectedVehicle.refInterne || 'Générée'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 font-semibold block">N° VO</span>
-                    <span className="text-slate-900 font-extrabold">#{selectedVehicle.numVO || 'N/A'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 font-semibold block">VIN (Châssis)</span>
-                    <span className="font-mono text-slate-900 font-extrabold break-all text-[10px]">{selectedVehicle.vin || 'Non renseigné'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 font-semibold block">Kilométrage</span>
-                    <span className="text-slate-900 font-extrabold">{selectedVehicle.kms?.toLocaleString()} Km</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 font-semibold block">Carburant</span>
-                    <span className="text-slate-900 font-extrabold">{selectedVehicle.energie}</span>
-                  </div>
-                </div>
-
-                {/* Specific features (Double Clés & Defects) */}
-                <div className="bg-slate-50 rounded-xl p-4 flex flex-col gap-3 border border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <Key size={14} className={selectedVehicle.doubleCles ? 'text-emerald-600' : 'text-slate-400'} />
-                    <span className="text-xs font-semibold text-slate-700">Double de clés :</span>
-                    <span className={`text-xs font-black ${selectedVehicle.doubleCles ? 'text-emerald-700' : 'text-slate-500'}`}>
-                      {selectedVehicle.doubleCles ? 'CONFIRMÉ / OUI' : 'NON DISPONIBLE'}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-col gap-1 border-t border-slate-200/50 pt-2.5">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                      <AlertTriangle size={12} className="text-amber-500" />
-                      État du véhicule / Défauts
-                    </span>
-                    <p className="text-xs text-slate-600 font-medium italic mt-0.5">
-                      {selectedVehicle.defauts || 'Aucun défaut ou carrosserie impeccable.'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Documents section */}
-                <div className="flex flex-col gap-2">
-                  <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1">
-                    <FileText size={14} className="text-indigo-600" />
-                    Administratif ({selectedVehicle.documents?.length || 0})
-                  </span>
-                  {selectedVehicle.documents && selectedVehicle.documents.length > 0 ? (
-                    <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
-                      {selectedVehicle.documents.map((doc, i) => (
-                        <div key={i} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-100 text-xs">
-                          <span className="font-bold text-slate-700 truncate max-w-[150px]" title={doc.name}>{doc.name}</span>
-                          <a 
-                            href={doc.base64} 
-                            download={doc.name}
-                            className="text-[10px] text-blue-600 font-extrabold bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded transition-all cursor-pointer"
-                          >
-                            Télécharger
-                          </a>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-slate-400 italic">Aucun document administratif uploadé.</span>
-                  )}
-                </div>
-
-                {/* Price tags */}
-                <div className="mt-auto bg-slate-900 text-white rounded-xl p-4 flex flex-col gap-2 shadow-sm">
-                  {selectedVehicle.prixAchat && (
-                    <div className="flex justify-between items-center text-xs text-slate-300">
-                      <span>Prix d'achat</span>
-                      <span className="font-bold text-slate-200">{selectedVehicle.prixAchat.toLocaleString()} € HT</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between items-center text-xs pt-1">
-                    <span className="text-slate-400 font-semibold">Prix Particulier HT</span>
-                    <span className="text-base font-black text-emerald-400">
-                      {selectedVehicle.prixParticulierTTC ? `${selectedVehicle.prixParticulierTTC.toLocaleString()} € HT` : 'Non fixé'}
-                    </span>
-                  </div>
-                  {selectedVehicle.prixProfessionnelTTC && (
-                    <div className="flex justify-between items-center text-xs border-t border-slate-800 pt-2">
-                      <span className="text-slate-400">Prix Pro HT</span>
-                      <span className="font-extrabold text-slate-200">
-                        {selectedVehicle.prixProfessionnelTTC.toLocaleString()} € HT
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* BDC & Modification Actions */}
-                <div className="flex items-center gap-2 mt-2">
-                  <button 
-                    onClick={() => {
-                      setForm(selectedVehicle);
-                      setDefautPoints(selectedVehicle.defautPoints || []);
-                      setIsEditing(true);
-                      setIsAdding(false);
-                    }}
-                    className="flex-1 border border-slate-200 hover:bg-slate-50 text-slate-700 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer text-center"
-                  >
-                    Modifier la fiche
-                  </button>
-
-                  <button 
-                    onClick={() => onCreateBdc(selectedVehicle)}
-                    className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3 rounded-xl text-xs font-black shadow-lg shadow-blue-500/10 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Sparkles size={14} />
-                    Créer un BDC
-                  </button>
-                </div>
-
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-20 text-slate-400 text-center font-medium">
-                <Info className="w-8 h-8 text-slate-300 stroke-[1.5] mb-2" />
-                Sélectionnez un véhicule dans la liste pour voir sa fiche complète.
-              </div>
-            )}
-          </div>
-
         </div>
-
+      </>
+    )}
       </div>
 
       {/* --- ADD / EDIT VEHICLE MODAL --- */}
       {(isAdding || isEditing) && (
-        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+        <div 
+          onClick={() => {
+            setIsAdding(false);
+            setIsEditing(false);
+          }}
+          className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 cursor-default"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl border border-slate-100 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden cursor-default"
+          >
             
             {/* Modal Header */}
             <div className="bg-slate-50 border-b border-slate-100 px-6 py-4 flex items-center justify-between">
@@ -1439,7 +1596,7 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
 
                     {/* Prix Particulier */}
                     <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-xs flex flex-col gap-2.5">
-                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">Prix Particulier (HT) *</span>
+                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">Prix Particulier (TTC) *</span>
                       <div className="flex items-center">
                         <input 
                           type="number"
@@ -1450,11 +1607,16 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
                         />
                         <span className="ml-2 font-bold text-slate-500">€</span>
                       </div>
+                      {form.prixParticulierHT !== undefined && (
+                        <span className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                          Soit {form.prixParticulierHT.toLocaleString()} € HT
+                        </span>
+                      )}
                     </div>
 
                     {/* Prix Professionnel */}
                     <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-xs flex flex-col gap-2.5">
-                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">Prix Professionnel (HT)</span>
+                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">Prix Professionnel (TTC)</span>
                       <div className="flex items-center">
                         <input 
                           type="number"
@@ -1465,11 +1627,16 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
                         />
                         <span className="ml-2 font-bold text-slate-500">€</span>
                       </div>
+                      {form.prixProfessionnelHT !== undefined && (
+                        <span className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                          Soit {form.prixProfessionnelHT.toLocaleString()} € HT
+                        </span>
+                      )}
                     </div>
 
                     {/* Prix Promo */}
                     <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-xs flex flex-col gap-2.5">
-                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">Prix Promo (HT)</span>
+                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">Prix Promo (TTC)</span>
                       <div className="flex items-center">
                         <input 
                           type="number"
@@ -1480,6 +1647,11 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
                         />
                         <span className="ml-2 font-bold text-slate-500">€</span>
                       </div>
+                      {form.prixPromoHT !== undefined && (
+                        <span className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                          Soit {form.prixPromoHT.toLocaleString()} € HT
+                        </span>
+                      )}
                     </div>
 
                     {/* TVA Récupérable */}
@@ -1841,8 +2013,14 @@ export const StockView: React.FC<Props> = ({ onShowToast, onCreateBdc }) => {
 
       {/* --- CONFIRM DELETE MODAL --- */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl p-6 w-full max-w-sm select-none">
+        <div 
+          onClick={() => setShowDeleteModal(null)}
+          className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 cursor-default"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl border border-slate-100 shadow-2xl p-6 w-full max-w-sm select-none cursor-default"
+          >
             <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Supprimer le véhicule ?</h3>
             <p className="text-slate-500 text-xs mt-2 leading-relaxed">
               Êtes-vous sûr de vouloir retirer ce véhicule du stock ? Cette action est irréversible et supprimera également les documents attachés.

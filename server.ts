@@ -371,6 +371,126 @@ async function startServer() {
   });
 
 
+  // Public payment proof fetch
+  app.get("/api/virement/:saleId", async (req, res) => {
+    try {
+      if (!getApps().length) return res.status(500).json({ error: "Firebase Admin n'est pas configuré." });
+      const { saleId } = req.params;
+      
+      const salesQuery = await getFirestore().collectionGroup('sales').get();
+      let foundDoc: any = null;
+      salesQuery.forEach(doc => {
+        if (doc.id === saleId) {
+          foundDoc = { id: doc.id, path: doc.ref.path, ...doc.data() };
+        }
+      });
+
+      if (!foundDoc) {
+        return res.status(404).json({ error: "Dossier de commande introuvable." });
+      }
+
+      res.json({
+        sale: {
+          id: foundDoc.id,
+          clientName: foundDoc.clientName,
+          marque: foundDoc.marque,
+          modele: foundDoc.modele,
+          plaque: foundDoc.plaque,
+          vin: foundDoc.vin,
+          company: foundDoc.company,
+          pendingProofs: foundDoc.pendingProofs || []
+        }
+      });
+    } catch (e: any) {
+      console.error("Virement fetch error", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Public payment proof submit
+  app.post("/api/virement/:saleId", async (req, res) => {
+    try {
+      if (!getApps().length) return res.status(500).json({ error: "Firebase Admin n'est pas configuré." });
+      const { saleId } = req.params;
+      const { amount, senderName, date, fileData, fileName, fileType } = req.body;
+
+      if (!amount || !senderName || !date || !fileData) {
+        return res.status(400).json({ error: "Montant, émetteur, date et fichier requis." });
+      }
+
+      const salesQuery = await getFirestore().collectionGroup('sales').get();
+      let foundDoc: any = null;
+      salesQuery.forEach(doc => {
+        if (doc.id === saleId) {
+          foundDoc = { id: doc.id, path: doc.ref.path, ...doc.data() };
+        }
+      });
+
+      if (!foundDoc) {
+        return res.status(404).json({ error: "Dossier de commande introuvable." });
+      }
+
+      const pathParts = foundDoc.path.split('/');
+      const usersIndex = pathParts.indexOf('users');
+      const ownerId = usersIndex !== -1 ? pathParts[usersIndex + 1] : null;
+
+      if (!ownerId) {
+        return res.status(400).json({ error: "Propriétaire du dossier introuvable." });
+      }
+
+      const proofId = `proof-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+      const newProof = {
+        id: proofId,
+        amount,
+        senderName,
+        date,
+        uploadDate: new Date().toISOString(),
+        fileData,
+        fileName: fileName || "virement_preuve",
+        fileType: fileType || "application/octet-stream",
+        status: 'pending'
+      };
+
+      const docRef = getFirestore().doc(foundDoc.path);
+      const existingProofs = foundDoc.pendingProofs || [];
+      
+      const logEntry = {
+        user: "Client (Dépôt preuve)",
+        action: `Preuve de virement de ${amount} € déposée par le client.`,
+        timestamp: new Date().toISOString()
+      };
+      const existingLog = foundDoc.deliveryLog || [];
+
+      await docRef.update({
+        pendingProofs: [...existingProofs, newProof],
+        deliveryLog: [...existingLog, logEntry]
+      });
+
+      // Send notification to the commercial
+      const isCanvas = foundDoc.path.startsWith('artifacts/');
+      const prefix = isCanvas ? `${pathParts[0]}/${pathParts[1]}/` : '';
+      const notifId = `notif-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+      const notifPath = `${prefix}users/${ownerId}/notifications/${notifId}`;
+
+      const notifRef = getFirestore().doc(notifPath);
+      await notifRef.set({
+        id: notifId,
+        title: `Preuve de virement - Dossier ${foundDoc.clientName}`,
+        description: `${foundDoc.clientName} a soumis une preuve de virement de ${amount} € (${senderName}). Veuillez la vérifier.`,
+        type: 'payment',
+        targetHash: `detail/${foundDoc.id}`,
+        read: false,
+        createdAt: new Date().toISOString()
+      });
+
+      res.json({ success: true, proofId });
+    } catch (e: any) {
+      console.error("Virement submit error", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+
   // --- Vite Middleware for Development ---
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

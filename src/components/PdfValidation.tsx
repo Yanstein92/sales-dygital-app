@@ -85,15 +85,20 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
             const existing = map.get(refKey);
             if (!existing.phone && s.refPhone) existing.phone = s.refPhone;
             if (!existing.email && s.refEmail) existing.email = s.refEmail;
+            if (!existing.address && s.refAddress) existing.address = s.refAddress;
+            if (!existing.zipCode && s.refZipCode) existing.zipCode = s.refZipCode;
+            if (!existing.city && s.refCity) existing.city = s.refCity;
+            if (!existing.notes && s.refNotes) existing.notes = s.refNotes;
           } else {
             map.set(refKey, {
               id: `sale-ref-${s.id}`,
               name: refName,
               phone: s.refPhone || '',
               email: s.refEmail || '',
-              address: '',
-              zipCode: '',
-              city: '',
+              address: s.refAddress || '',
+              zipCode: s.refZipCode || '',
+              city: s.refCity || '',
+              notes: s.refNotes || '',
               type: 'intermediaire',
             });
           }
@@ -112,6 +117,7 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
         if (!existing.address && c.address) existing.address = c.address;
         if (!existing.zipCode && c.zipCode) existing.zipCode = c.zipCode;
         if (!existing.city && c.city) existing.city = c.city;
+        if (!existing.notes && c.notes) existing.notes = c.notes;
       } else {
         finalMap.set(matchKey, c);
       }
@@ -159,6 +165,10 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
         ref: sugg.name,
         refPhone: sugg.phone || draft.refPhone || '',
         refEmail: sugg.email || draft.refEmail || '',
+        refAddress: sugg.address || draft.refAddress || '',
+        refZipCode: sugg.zipCode || draft.refZipCode || '',
+        refCity: sugg.city || draft.refCity || '',
+        refNotes: sugg.notes || draft.refNotes || '',
       });
     } else {
       setDraft({
@@ -294,6 +304,10 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
       ref: (fd.get('ref') as string) || '',
       refPhone: (fd.get('refPhone') as string) || '',
       refEmail: (fd.get('refEmail') as string) || '',
+      refAddress: String(fd.get('refAddress') || '').trim(),
+      refZipCode: String(fd.get('refZipCode') || '').trim(),
+      refCity: String(fd.get('refCity') || '').trim(),
+      refNotes: String(fd.get('refNotes') || '').trim(),
       address: String(fd.get('address') || '').trim(),
       zipCode: String(fd.get('zipCode') || '').trim(),
       city: String(fd.get('city') || '').trim(),
@@ -663,13 +677,57 @@ export const PdfValidation: React.FC<Props> = ({ draftExtraction, onCancel, onSh
                        <input 
                          type="email" 
                          name="refEmail" 
-                         placeholder="email@intermediaire.com" 
-                         value={draft.refEmail || ''} 
-                         onChange={(e) => setDraft({...draft, refEmail: e.target.value})}
-                         className="w-full p-2 border border-blue-200 bg-blue-50/20 focus:bg-white rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-xs font-medium" 
-                       />
-                     </div>
-                   </div>
+                          placeholder="email@intermediaire.com" 
+                          value={draft.refEmail || ''} 
+                          onChange={(e) => setDraft({...draft, refEmail: e.target.value})}
+                          className="w-full p-2 border border-blue-200 bg-blue-50/20 focus:bg-white rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-xs font-medium" 
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">Adresse Réf</label>
+                        <input 
+                          type="text" 
+                          name="refAddress" 
+                          placeholder="Adresse de l'intermédiaire" 
+                          value={draft.refAddress || ''} 
+                          onChange={(e) => setDraft({...draft, refAddress: e.target.value})}
+                          className="w-full p-2 border border-blue-200 bg-blue-50/20 focus:bg-white rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-xs font-medium" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">Code Postal Réf</label>
+                        <input 
+                          type="text" 
+                          name="refZipCode" 
+                          placeholder="CP intermédiaire" 
+                          value={draft.refZipCode || ''} 
+                          onChange={(e) => setDraft({...draft, refZipCode: e.target.value})}
+                          className="w-full p-2 border border-blue-200 bg-blue-50/20 focus:bg-white rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-xs font-medium" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">Ville Réf</label>
+                        <input 
+                          type="text" 
+                          name="refCity" 
+                          placeholder="Ville intermédiaire" 
+                          value={draft.refCity || ''} 
+                          onChange={(e) => setDraft({...draft, refCity: e.target.value})}
+                          className="w-full p-2 border border-blue-200 bg-blue-50/20 focus:bg-white rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-xs font-medium" 
+                        />
+                      </div>
+                      <div className="sm:col-span-3">
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">Notes Réf</label>
+                        <input 
+                          type="text" 
+                          name="refNotes" 
+                          placeholder="Notes / commentaires sur l'intermédiaire" 
+                          value={draft.refNotes || ''} 
+                          onChange={(e) => setDraft({...draft, refNotes: e.target.value})}
+                          className="w-full p-2 border border-blue-200 bg-blue-50/20 focus:bg-white rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-xs font-medium" 
+                        />
+                      </div>
+                    </div>
                  </div>
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-bold text-slate-700 mb-1">Adresse</label>

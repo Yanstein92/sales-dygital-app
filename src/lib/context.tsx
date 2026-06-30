@@ -11,6 +11,7 @@ interface AppContextType {
   payments: Payment[];
   vehicles: Vehicle[];
   clients: Client[];
+  logisticsDocs: any[];
   isDbLoading: boolean;
   setAuthError: (err: string | null) => void;
   authError: string | null;
@@ -32,6 +33,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [payments, setPayments] = useState<Payment[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [logisticsDocs, setLogisticsDocs] = useState<any[]>([]);
   const [teamMembers, setTeamMembers] = useState<UserProfile[]>([]);
   const [isDbLoading, setIsDbLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -80,6 +82,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setPayments([]);
         setVehicles([]);
         setClients([]);
+        setLogisticsDocs([]);
         setUserProfile(null);
         setIsDbLoading(false);
       }
@@ -154,6 +157,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const pathPayments = getUserPath('payments', finalDatabaseUid);
         const pathVehicles = getUserPath('vehicles', finalDatabaseUid);
         const pathClients = getUserPath('clients', finalDatabaseUid);
+        const pathLogistics = getUserPath('logistics_documents', finalDatabaseUid);
 
         // Fetch team members globally using server API
         fetchTeamData(profile, finalDatabaseUid, userAuth.uid);
@@ -185,7 +189,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           handleFirestoreError(error, OperationType.LIST, pathClients);
         });
 
-        return () => { unsubSales(); unsubPayments(); unsubVehicles(); unsubClients(); };
+        const unsubLogistics = onSnapshot(collection(db, pathLogistics), (snapshot) => {
+          setLogisticsDocs(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        }, (error) => {
+          console.error("Logistics snapshot error", error);
+        });
+
+        return () => { unsubSales(); unsubPayments(); unsubVehicles(); unsubClients(); unsubLogistics(); };
       } catch (err) {
         setAuthError("Erreur de profil initial.");
         setIsDbLoading(false);
@@ -200,7 +210,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   return (
     <AppContext.Provider value={{ 
-      userAuth, userProfile, setUserProfile, sales, payments, vehicles, clients, 
+      userAuth, userProfile, setUserProfile, sales, payments, vehicles, clients, logisticsDocs,
       isDbLoading, authError, setAuthError, databaseUid, teamMembers, refreshTeam,
       selectedClientId, setSelectedClientId, selectedVehicleId, setSelectedVehicleId
     }}>

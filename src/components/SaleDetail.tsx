@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   ChevronLeft, Calendar, Edit2, Trash2, User, FileText, Send, 
   CreditCard, CheckCircle2, X, MessageCircle, Mail, Hash, Car,
-  CheckSquare, Plane, MapPin, Store
+  CheckSquare, Plane, MapPin, Store, Upload, ClipboardCopy, Check, Globe
 } from 'lucide-react';
 import { useApp } from '../lib/context';
 import { Payment, Sale } from '../types';
@@ -25,12 +25,17 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showRefundForm, setShowRefundForm] = useState(false);
   const [refundData, setRefundData] = useState({ amount: '', date: new Date().toISOString().split('T')[0], method: 'Virement', details: '' });
+  const [selectedProofFile, setSelectedProofFile] = useState<{ fileData: string; fileType: string; fileName: string; amount: number; senderName: string } | null>(null);
+  const [proofToValidate, setProofToValidate] = useState<any | null>(null);
+  const [proofToReject, setProofToReject] = useState<any | null>(null);
+  const [rejectReason, setRejectReason] = useState<string>('');
 
   const sale = sales.find(s => s.id === saleId);
   if (!sale || !userAuth) return null;
 
   const salePayments = payments.filter(p => p.saleId === saleId);
-  const totalPaid = salePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const activePayments = salePayments.filter(p => !(p as any).deleted && (p as any).status !== 'deleted');
+  const totalPaid = activePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   const remaining = sale.factureStatus === 'rembourse' ? 0 : Math.max(0, (Number(sale.price) + Number(sale.transport || 0)) - totalPaid);
   const isPaid = remaining <= 0;
 
@@ -223,6 +228,85 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
     }
   };
 
+  const confirmAcceptProof = async () => {
+    if (!proofToValidate) return;
+    const proof = proofToValidate;
+    try {
+      const paymentId = `pay-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const paymentData = {
+        id: paymentId,
+        saleId: sale.id,
+        type: "VIR",
+        payer: proof.senderName,
+        date: proof.date,
+        encaissementDate: new Date().toISOString().split('T')[0], // today
+        amount: Number(proof.amount),
+        addedBy: userProfile?.name || "Conseiller Commercial",
+        proofId: proof.id,
+        proofFileData: proof.fileData,
+        proofFileType: proof.fileType,
+        proofFileName: proof.fileName
+      };
+
+      await setDoc(doc(db, getUserPath('payments', databaseUid), paymentId), paymentData);
+
+      const updatedProofs = (sale.pendingProofs || []).map((p: any) => 
+        p.id === proof.id 
+          ? { ...p, status: 'validated', validatedBy: userProfile?.name, validatedAt: new Date().toISOString() }
+          : p
+      );
+
+      const logEntry = {
+        user: userProfile?.name || "Commercial",
+        action: `Preuve de virement de ${proof.amount} € validée. Virement enregistré.`,
+        timestamp: new Date().toISOString()
+      };
+      const existingLog = sale.deliveryLog || [];
+
+      await setDoc(doc(db, getUserPath('sales', databaseUid), sale.id), {
+        pendingProofs: updatedProofs,
+        deliveryLog: [...existingLog, logEntry]
+      }, { merge: true });
+
+      onShowToast("Preuve de virement validée et paiement enregistré !", "success");
+      setProofToValidate(null);
+    } catch (err: any) {
+      console.error(err);
+      onShowToast("Erreur lors de la validation : " + err.message, "error");
+    }
+  };
+
+  const confirmRejectProof = async () => {
+    if (!proofToReject) return;
+    if (!rejectReason.trim()) {
+      onShowToast("Un motif de refus est requis.", "error");
+      return;
+    }
+    const proof = proofToReject;
+    try {
+      const updatedProofs = (sale.pendingProofs || []).filter((p: any) => p.id !== proof.id);
+
+      const logEntry = {
+        user: userProfile?.name || "Commercial",
+        action: `Preuve de virement de ${proof.amount} € refusée pour le motif : ${rejectReason}`,
+        timestamp: new Date().toISOString()
+      };
+      const existingLog = sale.deliveryLog || [];
+
+      await setDoc(doc(db, getUserPath('sales', databaseUid), sale.id), {
+        pendingProofs: updatedProofs,
+        deliveryLog: [...existingLog, logEntry]
+      }, { merge: true });
+
+      onShowToast("Preuve de virement refusée et supprimée.", "error");
+      setProofToReject(null);
+      setRejectReason('');
+    } catch (err: any) {
+      console.error(err);
+      onShowToast("Erreur lors du refus : " + err.message, "error");
+    }
+  };
+
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!noteInput.trim()) return;
@@ -254,13 +338,28 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
     }
 
     const handleDelete = async () => {
-      if (window.confirm("Supprimer ce paiement ?")) {
-        try {
-          await deleteDoc(doc(db, getUserPath('payments', databaseUid), p.id));
-          onShowToast("Paiement supprimé", "success");
-        } catch (err: any) {
-          console.error("Delete payment error:", err);
-          onShowToast(`Erreur de suppression: ${err.message || err}`, "error");
+      const isDeleted = (p as any).deleted || (p as any).status === 'deleted';
+      if (isDeleted) {
+        if (window.confirm("Êtes-vous sûr de vouloir supprimer définitivement ce paiement ?")) {
+          if (window.confirm("Confirmation finale : Cette action supprimera définitivement le paiement de l'historique. Continuer ?")) {
+            try {
+              await deleteDoc(doc(db, getUserPath('payments', databaseUid), p.id));
+              onShowToast("Paiement définitivement supprimé", "success");
+            } catch (err: any) {
+              console.error("Delete payment error:", err);
+              onShowToast(`Erreur de suppression: ${err.message || err}`, "error");
+            }
+          }
+        }
+      } else {
+        if (window.confirm("Êtes-vous sûr de vouloir supprimer ce paiement et le placer dans l'historique en grisé ?")) {
+          try {
+            await setDoc(doc(db, getUserPath('payments', databaseUid), p.id), { deleted: true }, { merge: true });
+            onShowToast("Paiement placé dans l'historique en grisé", "success");
+          } catch (err: any) {
+            console.error("Trash payment error:", err);
+            onShowToast(`Erreur: ${err.message || err}`, "error");
+          }
         }
       }
     }
@@ -286,20 +385,41 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
         </tr>
       );
     }
+
+    const isDeleted = (p as any).deleted || (p as any).status === 'deleted';
+
     return (
-      <tr className="hover:bg-slate-50 border-b border-slate-100 group">
-        <td className="px-5 py-4"><span className="bg-slate-100 text-slate-700 px-3 py-1.5 rounded-md text-xs font-black border border-slate-200">{p.type}</span></td>
-        <td className="px-5 py-4 text-slate-800 font-medium text-base">
-          <div>{p.payer}</div>
+      <tr className={`border-b border-slate-100 group transition-all ${isDeleted ? 'bg-slate-150/40 text-slate-400 opacity-60 line-through select-none' : 'hover:bg-slate-50'}`}>
+        <td className="px-5 py-4">
+          <span className={`px-3 py-1.5 rounded-md text-xs font-black border ${isDeleted ? 'bg-slate-200 text-slate-500 border-slate-300' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>{p.type}</span>
+        </td>
+        <td className="px-5 py-4 font-medium text-base">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className={isDeleted ? 'text-slate-400 font-semibold' : 'text-slate-800'}>{p.payer}</span>
+            {isDeleted && <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ml-1.5 no-underline inline-block">Supprimé (Grisé)</span>}
+            {(p as any).proofFileData && (
+              <button 
+                onClick={() => setSelectedProofFile({ fileData: (p as any).proofFileData, fileType: (p as any).proofFileType || 'application/pdf', fileName: (p as any).proofFileName || 'Preuve', amount: p.amount, senderName: p.payer })}
+                className="inline-flex items-center text-blue-600 bg-blue-50 border border-blue-150 hover:bg-blue-100 px-1.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer relative group"
+              >
+                <FileText size={10} className="mr-0.5" /> Preuve
+                <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 px-2 py-0.5 bg-slate-900 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+                  Voir le virement client
+                </span>
+              </button>
+            )}
+          </div>
           {p.addedBy && <div className="text-[10px] text-slate-400 font-normal italic mt-0.5">Par {p.addedBy}</div>}
         </td>
         <td className="px-5 py-4 text-slate-500 font-medium text-sm">{new Date(p.date).toLocaleDateString('fr-FR')}</td>
         <td className="px-5 py-4 text-slate-700 font-bold text-sm bg-green-50/50">{p.encaissementDate ? new Date(p.encaissementDate).toLocaleDateString('fr-FR') : <span className="text-slate-400 font-normal italic">En attente</span>}</td>
-        <td className="px-5 py-4 text-right font-black text-slate-800 text-lg whitespace-nowrap">{Number(p.amount).toLocaleString()} €</td>
+        <td className={`px-5 py-4 text-right font-black text-lg whitespace-nowrap ${isDeleted ? 'text-slate-400 line-through' : 'text-slate-800'}`}>{Number(p.amount).toLocaleString()} €</td>
         <td className="px-5 py-4 text-center">
           <div className="flex justify-center gap-2">
-            <button onClick={() => setIsEditing(true)} className="text-blue-500 hover:text-blue-700 p-1.5 bg-blue-50 rounded-md transition-all hover:scale-105"><Edit2 size={16} /></button>
-            <button onClick={handleDelete} className="text-red-500 hover:text-red-700 p-1.5 bg-red-50 rounded-md transition-all hover:scale-105"><Trash2 size={16} /></button>
+            {!isDeleted && (
+              <button onClick={() => setIsEditing(true)} className="text-blue-500 hover:text-blue-700 p-1.5 bg-blue-50 rounded-md transition-all hover:scale-105"><Edit2 size={16} /></button>
+            )}
+            <button onClick={handleDelete} className="text-red-500 hover:text-red-700 p-1.5 bg-red-50 rounded-md transition-all hover:scale-105" title={isDeleted ? "Supprimer définitivement" : "Supprimer (Griser)"}><Trash2 size={16} /></button>
           </div>
         </td>
       </tr>
@@ -559,6 +679,58 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
         </div>
       )}
 
+      {/* Pending Proofs Section */}
+      {sale.pendingProofs && sale.pendingProofs.some((p: any) => p.status === 'pending') && (
+        <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-6 mb-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-4 border-b border-blue-100 pb-2">
+            <Upload className="text-blue-600 animate-pulse" size={20} />
+            <h4 className="text-blue-900 font-extrabold text-base">Preuves de virement en attente de validation ({sale.pendingProofs.filter((p: any) => p.status === 'pending').length})</h4>
+          </div>
+          
+          <div className="space-y-4">
+            {sale.pendingProofs.filter((p: any) => p.status === 'pending').map((proof: any) => (
+              <div key={proof.id} className="bg-white p-4 rounded-xl border border-blue-100 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-black text-slate-800">{proof.senderName}</span>
+                    <span className="bg-blue-100 text-blue-800 text-xs font-black px-2.5 py-0.5 rounded-full">
+                      {proof.amount.toLocaleString()} €
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-500 font-medium">
+                    Virement émis le {new Date(proof.date).toLocaleDateString('fr-FR')} • Déposé le {new Date(proof.uploadDate).toLocaleString('fr-FR')}
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-mono truncate max-w-xs md:max-w-md">
+                    Fichier : {proof.fileName}
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => setSelectedProofFile({ fileData: proof.fileData, fileType: proof.fileType, fileName: proof.fileName, amount: proof.amount, senderName: proof.senderName })}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold px-3 py-2 rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-all"
+                  >
+                    <FileText size={14} /> Voir preuve
+                  </button>
+                  <button
+                    onClick={() => setProofToValidate(proof)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-all shadow-sm"
+                  >
+                    <Check size={14} /> Valider
+                  </button>
+                  <button
+                    onClick={() => { setProofToReject(proof); setRejectReason(''); }}
+                    className="bg-red-50 hover:bg-red-100 text-red-600 font-extrabold px-3 py-2 rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-all"
+                  >
+                    <X size={14} /> Refuser
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Main Layout Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
@@ -667,38 +839,96 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
 
         {/* Right Column: Finance */}
         <div className="space-y-6">
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-             <div className="p-6 flex-1 flex flex-col items-center justify-center bg-gradient-to-b from-blue-50/50 to-transparent border-b border-slate-100 relative">
-               {sale.discountAmount && sale.discountAmount > 0 ? (
-                 <div className="absolute top-4 right-4 bg-red-100 text-red-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
-                   Remise : -{sale.discountAmount} €
-                 </div>
-               ) : null}
-               {sale.saleMode === 'locale' ? (
-                 <div className="absolute top-4 left-4 bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
-                   HT : {(Number(sale.price) / (1 + (sale.tvaRate || 20) / 100)).toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} €
-                 </div>
-               ) : null}
-               {sale.initialPrice && sale.initialPrice > 0 && sale.initialPrice !== sale.price ? (
-                  <p className="text-xs font-bold text-slate-400 line-through mb-1">{sale.initialPrice.toLocaleString()} €</p>
-               ) : null}
-               <p className="text-xs font-black text-blue-500 uppercase tracking-widest mb-2">
-                 Total Facturé {sale.saleMode === 'locale' ? 'TTC' : 'HT'}
-               </p>
-               <p className="text-5xl font-black text-blue-950 whitespace-nowrap tracking-tight">{(Number(sale.price) + Number(sale.transport || 0)).toLocaleString()} €</p>
-             </div>
+           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+              <div className="p-6 flex-1 flex flex-col items-center justify-center bg-gradient-to-b from-blue-50/50 to-transparent border-b border-slate-100 relative">
+                {sale.discountAmount && sale.discountAmount > 0 ? (
+                  <div className="absolute top-4 right-4 bg-red-100 text-red-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
+                    Remise : -{sale.discountAmount} €
+                  </div>
+                ) : null}
+                {sale.saleMode === 'locale' ? (
+                  <div className="absolute top-4 left-4 bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
+                    HT : {(Number(sale.price) / (1 + (sale.tvaRate || 20) / 100)).toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} €
+                  </div>
+                ) : null}
+                {sale.initialPrice && sale.initialPrice > 0 && sale.initialPrice !== sale.price ? (
+                   <p className="text-xs font-bold text-slate-400 line-through mb-1">{sale.initialPrice.toLocaleString()} €</p>
+                ) : null}
+                <p className="text-xs font-black text-blue-500 uppercase tracking-widest mb-2 text-center">
+                  {remaining <= 0 || sale.factureStatus === 'facture'
+                    ? (sale.saleMode === 'locale' ? 'Total Facturé TTC' : 'Total Facturé HT')
+                    : (sale.saleMode === 'locale' ? 'Total TTC' : 'Total HT')
+                  }
+                </p>
+                <p className="text-5xl font-black text-blue-950 whitespace-nowrap tracking-tight">{(Number(sale.price) + Number(sale.transport || 0)).toLocaleString()} €</p>
+              </div>
+              
+              <div className="p-6 grid grid-cols-2 gap-4 bg-slate-50/50">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                  <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Encaissé</p>
+                  <p className="text-xl font-black text-emerald-600">{totalPaid.toLocaleString()} €</p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                  <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Reste à payer</p>
+                  <p className={`text-xl font-black ${remaining <= 0 ? 'text-slate-300' : 'text-red-600'}`}>{remaining.toLocaleString()} €</p>
+                </div>
+              </div>
+           </div>
+
+           {/* Client Share Links */}
+           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden p-6 space-y-4">
+             <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-2">
+               <Globe className="text-blue-600" size={16} /> Liens de partage public client
+             </h4>
              
-             <div className="p-6 grid grid-cols-2 gap-4 bg-slate-50/50">
-               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                 <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Encaissé</p>
-                 <p className="text-xl font-black text-emerald-600">{totalPaid.toLocaleString()} €</p>
+             <div className="space-y-4">
+               {/* Delivery Date Link */}
+               <div className="bg-slate-50 border border-slate-200/60 p-4 rounded-xl space-y-2">
+                 <div className="flex items-center justify-between">
+                   <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                     <Calendar size={14} className="text-indigo-500" /> Planification Livraison
+                   </span>
+                   <button
+                     onClick={() => {
+                       const link = `${window.location.origin}/#reserve/${sale.id}`;
+                       navigator.clipboard.writeText(link);
+                       onShowToast("Lien de planification copié !", "success");
+                     }}
+                     className="text-xs text-blue-600 hover:text-blue-800 font-extrabold flex items-center gap-1 cursor-pointer"
+                   >
+                     <ClipboardCopy size={12} /> Copier
+                   </button>
+                 </div>
+                 <p className="text-[10px] text-slate-400 font-medium">Permet au client de planifier son jour et créneau de livraison.</p>
+                 <div className="bg-white px-2 py-1.5 rounded-lg border border-slate-200 text-[10px] text-slate-600 font-mono select-all truncate">
+                   {`${window.location.origin}/#reserve/${sale.id}`}
+                 </div>
                </div>
-               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                 <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Reste à payer</p>
-                 <p className={`text-xl font-black ${remaining <= 0 ? 'text-slate-300' : 'text-red-600'}`}>{remaining.toLocaleString()} €</p>
+
+               {/* Payment Proof Link */}
+               <div className="bg-slate-50 border border-slate-200/60 p-4 rounded-xl space-y-2">
+                 <div className="flex items-center justify-between">
+                   <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                     <Upload size={14} className="text-emerald-500" /> Preuve de virement
+                   </span>
+                   <button
+                     onClick={() => {
+                       const link = `${window.location.origin}/#virement/${sale.id}`;
+                       navigator.clipboard.writeText(link);
+                       onShowToast("Lien de dépôt de virement copié !", "success");
+                     }}
+                     className="text-xs text-blue-600 hover:text-blue-800 font-extrabold flex items-center gap-1 cursor-pointer"
+                   >
+                     <ClipboardCopy size={12} /> Copier
+                   </button>
+                 </div>
+                 <p className="text-[10px] text-slate-400 font-medium">Permet au client d'uploader sa preuve de virement et de saisir les infos de son virement.</p>
+                 <div className="bg-white px-2 py-1.5 rounded-lg border border-slate-200 text-[10px] text-slate-600 font-mono select-all truncate">
+                   {`${window.location.origin}/#virement/${sale.id}`}
+                 </div>
                </div>
              </div>
-          </div>
+           </div>
         </div>
       </div>
 
@@ -770,6 +1000,169 @@ export const SaleDetail: React.FC<Props> = ({ saleId, onBack, onEditSale, onShow
           </table>
         </div>
       </div>
+
+      {selectedProofFile && (
+        <div 
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in"
+          onClick={() => setSelectedProofFile(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-100 max-w-3xl w-full max-h-[90vh] flex flex-col animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header: Respecting header color and shape */}
+            <div className="bg-slate-900 px-6 py-4 flex justify-between items-center">
+              <div>
+                <h3 className="font-extrabold text-white text-base">Preuve de virement</h3>
+                <p className="text-xs text-blue-400 font-bold mt-0.5">
+                  Montant : {selectedProofFile.amount.toLocaleString()} € • Émetteur : {selectedProofFile.senderName}
+                </p>
+              </div>
+              <button 
+                onClick={() => setSelectedProofFile(null)} 
+                className="text-slate-400 hover:text-white p-2 rounded-xl transition-all hover:bg-slate-800 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            {/* Body */}
+            <div className="p-6 overflow-y-auto flex-1 bg-slate-50 flex items-center justify-center">
+              {selectedProofFile.fileType === 'application/pdf' ? (
+                <iframe 
+                  src={selectedProofFile.fileData} 
+                  title={selectedProofFile.fileName}
+                  className="w-full h-[60vh] rounded-xl border border-slate-200"
+                />
+              ) : (
+                <img 
+                  src={selectedProofFile.fileData} 
+                  alt={selectedProofFile.fileName}
+                  className="max-h-[60vh] max-w-full object-contain rounded-xl shadow-md border border-slate-200"
+                />
+              )}
+            </div>
+            
+            {/* Footer */}
+            <div className="bg-slate-50 px-6 py-4 border-t border-slate-100 flex justify-end">
+              <button 
+                onClick={() => setSelectedProofFile(null)}
+                className="bg-slate-900 hover:bg-slate-800 text-white font-black px-6 py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {proofToValidate && (
+        <div 
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in"
+          onClick={() => setProofToValidate(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-100 max-w-md w-full flex flex-col animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header: Respecting header color and shape */}
+            <div className="bg-slate-900 px-6 py-4 flex justify-between items-center">
+              <h3 className="font-extrabold text-white text-base">Valider la preuve de virement</h3>
+              <button 
+                onClick={() => setProofToValidate(null)} 
+                className="text-slate-400 hover:text-white p-2 rounded-xl transition-all hover:bg-slate-800 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            {/* Body */}
+            <div className="p-6 bg-slate-50 space-y-4">
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Confirmez-vous la validation de ce virement de <span className="font-black text-slate-800">{proofToValidate.amount.toLocaleString()} €</span> émis par <span className="font-black text-slate-800">{proofToValidate.senderName}</span> ?
+              </p>
+              <p className="text-xs text-slate-400">
+                Cette action enregistrera définitivement ce montant dans la liste des paiements validés du dossier.
+              </p>
+            </div>
+            
+            {/* Footer */}
+            <div className="bg-slate-50 px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+              <button 
+                onClick={() => setProofToValidate(null)}
+                className="bg-slate-250 hover:bg-slate-350 text-slate-700 font-extrabold px-4 py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                Annuler
+              </button>
+              <button 
+                onClick={confirmAcceptProof}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-5 py-2.5 rounded-xl text-xs transition-colors cursor-pointer shadow-md"
+              >
+                Valider et Enregistrer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {proofToReject && (
+        <div 
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in"
+          onClick={() => setProofToReject(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-100 max-w-md w-full flex flex-col animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header: Respecting header color and shape */}
+            <div className="bg-slate-900 px-6 py-4 flex justify-between items-center">
+              <h3 className="font-extrabold text-white text-base">Refuser la preuve</h3>
+              <button 
+                onClick={() => setProofToReject(null)} 
+                className="text-slate-400 hover:text-white p-2 rounded-xl transition-all hover:bg-slate-800 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            {/* Body */}
+            <div className="p-6 bg-slate-50 space-y-4">
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Veuillez indiquer le motif du refus pour la preuve de virement de <span className="font-black text-slate-800">{proofToReject.amount.toLocaleString()} €</span> de <span className="font-black text-slate-800">{proofToReject.senderName}</span> :
+              </p>
+              
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Ex: Document illisible, montant incorrect, etc. (Obligatoire)"
+                className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-bold focus:ring-2 focus:ring-red-500 outline-none text-slate-800 min-h-[100px]"
+                required
+              />
+            </div>
+            
+            {/* Footer */}
+            <div className="bg-slate-50 px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+              <button 
+                onClick={() => setProofToReject(null)}
+                className="bg-slate-250 hover:bg-slate-350 text-slate-700 font-extrabold px-4 py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                Annuler
+              </button>
+              <button 
+                onClick={confirmRejectProof}
+                disabled={!rejectReason.trim()}
+                className={`font-black px-5 py-2.5 rounded-xl text-xs transition-colors flex items-center justify-center gap-2 shadow-md ${
+                  rejectReason.trim()
+                    ? 'bg-red-600 hover:bg-red-700 text-white cursor-pointer'
+                    : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                }`}
+              >
+                Confirmer le refus
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
